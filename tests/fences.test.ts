@@ -23,10 +23,12 @@ interface Fence {
 const parse = (line: string): Fence | null => {
   const match = line.match(FENCE_RE);
   if (!match) return null;
-  const run = match[2];
-  const info = match[3];
-  if (run[0] === "`" && info.includes("`")) return null;
-  return { char: run[0] as "`" | "~", length: run.length, info: info.trim() };
+  const run = match[2] ?? "";
+  const info = match[3] ?? "";
+  if (!run) return null;
+  const char = run.charAt(0) as "`" | "~";
+  if (char === "`" && info.includes("`")) return null;
+  return { char, length: run.length, info: info.trim() };
 };
 
 const isBalanced = (text: string): boolean => {

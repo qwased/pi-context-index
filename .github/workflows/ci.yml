@@ -38,6 +38,7 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
 
       - run: bun run typecheck
+      - run: bun run typecheck:tests
       - run: bun test
 
       # The packed file list is part of the release contract: entry, runtime

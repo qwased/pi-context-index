@@ -11,11 +11,12 @@ pi-context-index is an independent Pi extension: LLM-free conversation compactio
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run typecheck
+bun run typecheck:tests
 bun test
 npm pack --dry-run
 ```
 
-The locked host is Pi 1.4.0. CI runs install, typecheck, tests and the pack check on a clean Ubuntu runner. Tests that read session files or settings must use a temporary cwd/agentDir; never read or modify the user's real agent directory.
+The locked host is Pi 1.4.0. CI runs install, package typecheck, test typecheck, tests and the pack check on a clean Ubuntu runner. Tests that read session files or settings must use a temporary cwd/agentDir; never read or modify the user's real agent directory.
 
 ## Layout
 
