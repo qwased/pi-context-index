@@ -84,13 +84,14 @@ Requires Pi `>=1.4.0 <2.0.0`. There is no Pi 1.0 compatibility layer.
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run typecheck
+bun run typecheck:tests
 bun test
 npm pack --dry-run
 ```
 
 The package ships `index.ts`, `src/**/*.ts`, `README.md`, `LICENSE` and `CHANGELOG.md` only. Design notes, prototype research and the legacy reference mirror are excluded.
 
-Start with [AGENTS.md](AGENTS.md) for the architecture and hard rules, then P0 in the implementation plan.
+Start with [AGENTS.md](AGENTS.md) for the architecture and hard rules, then P0 in the implementation plan. Current status and handoff live in [docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md](docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md).
 
 ## Limits and non-goals
 
