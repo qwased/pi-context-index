@@ -1,8 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerContextIndex } from "./src/host";
 
 /**
- * P0 wires the two registrations here: the always-on `context_index` reader
- * and the single `session_before_compact` path. This scaffold deliberately
- * registers nothing, so the package stays inert until that pipeline lands.
+ * The extension registers one direct reader tool and takes over compaction.
+ * Both paths are local and deterministic; no model is called to build context.
  */
-export default (_pi: ExtensionAPI): void => {};
+export default (pi: ExtensionAPI): void => {
+  registerContextIndex(pi);
+};
