@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.tgz
+.pi*
+.pi-mux-state.json
+package-lock.json
+
+# Local research data stays out of git: real sessions, replays, backups and
+# raw prototype outputs. The prototype scripts and pre-registrations are
+# tracked because they are synthetic and define how the tests were designed.
+research/.backup/
+research/sessions/
+research/replays/
+research/prototype/out/
+research/review-bundle/*.zip
+research/review-bundle/*.sha256
+
+*.bak

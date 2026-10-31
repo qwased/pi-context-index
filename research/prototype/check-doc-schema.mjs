@@ -1,0 +1,12 @@
+import { readFileSync } from "node:fs";
+const t = readFileSync("docs/plans/PI_CONTEXT_INDEX_PROTOTYPE_DESIGN.md", "utf8");
+const fence = String.fromCharCode(96).repeat(3);
+const header = "建议的宿主 schema";
+const start = t.indexOf(header);
+const open = t.indexOf(fence + "json", start);
+const blockStart = open + fence.length + 4;
+const end = t.indexOf(fence, blockStart);
+const block = t.slice(blockStart, end).trim();
+const j = JSON.parse(block);
+console.log("schema JSON ok; read props:", Object.keys(j.parameters.properties.read.properties).join(","));
+console.log("additionalProperties:", j.parameters.additionalProperties, j.parameters.properties.read.additionalProperties);

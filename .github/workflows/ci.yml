@@ -1,0 +1,45 @@
+name: CI
+
+# pull_request (NOT pull_request_target): fork PRs run with a read-only
+# GITHUB_TOKEN and no secrets — checked-out code is untrusted.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# Minimal token scope: the job only needs to read the checked-out code.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Cancel stale runs on PRs; master pushes keep their status per commit.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions pinned to commit SHAs so a retagged release cannot swap the
+      # code this job runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          # Pin the runtime too — unpinned, every run floats to bun latest
+          # and the test runner drifts independently of this repo.
+          bun-version: 1.4.4
+
+      # --frozen-lockfile: reproducible host and compiler versions.
+      # --ignore-scripts: dependency postinstall code does not run in CI.
+      - run: bun install --frozen-lockfile --ignore-scripts
+
+      - run: bun run typecheck
+      - run: bun test
+
+      # The packed file list is part of the release contract: entry, runtime
+      # sources, README, LICENSE and CHANGELOG only.
+      - run: npm pack --dry-run

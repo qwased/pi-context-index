@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { makeFixture } from "./fixtures.mjs";
+import { buildCatalog } from "./catalog.mjs";
+import { buildView } from "./render.mjs";
+import { createReader } from "./reader.mjs";
+const f = makeFixture("A");
+const first = f.entries.find((e) => e.message?.role === "user");
+first.message.content = [first.message.content, ...Array.from({ length: 60 }, (_, i) => `Synthetic filler line ${i + 1}: this line exists only to make the first message long enough to be excerpted by the view budget.`), ...Array.from({ length: 60 }, (_, i) => `Synthetic filler line ${i + 61}: this line exists only to make the first message long enough to be excerpted by the view budget.`)].join("\n");
+const c = buildCatalog(f);
+const v = buildView(c, { capChars: 6287, includeCounters: false, pageTable: true });
+const r = createReader({ catalog: c, view: v, pageTable: true });
+const i = v.manifest.entries.findIndex((e) => e.n === 1);
+const row = r.run({ view: v.manifest.id, offset: i, limit: 1 });
+console.log("index", i, "status", v.manifest.entries[i].status);
+console.log(row.slice(0, 1600));
