@@ -260,7 +260,9 @@ type Observation = {
   operation?: "read" | "write" | "edit" | "command";
   path?: string;
   command?: string;
-  resultId?: EntryRef;
+  resultId?: EntryRef; // 嵌套调用时为承载 nestedCalls 的父结果条目
+  nestedIndex?: number; // 0 起的 calls[i]；与 resultId 组成配对键
+  argumentsBytes?: number; // 嵌套参数被 Pi 丢弃时记录的原大小；输出“参数已省略”
   isError?: boolean;
   sources: Span[];
   valueSpan?: Span;
@@ -282,7 +284,7 @@ type CapsuleDetails = {
     keep: number;
   };
   shown: Span[];
-  observations: Array<{ callId: string; resultId?: EntryRef }>;
+  observations: Array<{ callId: string; resultId?: EntryRef; nestedIndex?: number }>;
   counts: {
     saved: number;
     effective: number;
@@ -294,6 +296,8 @@ type CapsuleDetails = {
   usedChars: number;
 };
 ```
+
+嵌套调用没有独立结果条目，`resultId` 固定为承载 `nestedCalls` 的父结果条目，配对键为 `(resultId, nestedIndex)`；直接工具没有 `nestedIndex`。该修订来自 [0.1.0 进度 §7.2](PI_CONTEXT_INDEX_V0_1_PROGRESS.md)。
 
 `TextField.text` 复用已保存字符串，`Chunk` 保存跨度而不是正文副本。`details` 保存来源、选择跨度和小型统计，不再保存逐消息状态数组或正文副本。工具结果的 `details` 也只保存读取区间、成本、游标等结构。
 
