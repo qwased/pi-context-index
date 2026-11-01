@@ -5,7 +5,7 @@
 - 状态：P0–P5 源码与本地验证完成；P4 自动验收（compact-all、重启/切树/fork/四种编辑、连续 10 次压缩、12 题曝光、10K/50MB 基准、codemode 8 条迁移）与 P5 打包/安装冒烟通过；真实会话两轮压缩观察已完成，外审裁定 S0 修、S1 延后；S0 已修正（`SELECTOR_VERSION=2`，见 §2.11），S1 保持 W=2 并记入已知限制。`dist/pi-context-index` 已生成 `0.1.0-test.2` 测试包，临时 agentDir 安装与真实压缩/codemode 冒烟通过；真实 TUI 与三个真实任务试用仍待用户环境，未发布。下一窗口提示见 §9
 - 设计依据：[V0.1 设计](./PI_CONTEXT_INDEX_V0_1_DESIGN.md)
 - 执行依据：[V0.1 落地计划](./PI_CONTEXT_INDEX_V0_1_IMPLEMENTATION_PLAN.md)
-- 基线提交：P0–P3 三批与 P4/P5 + 观察/外审文档已入库（最新 `86dbbe2`）；S0 修正与测试包在当前工作树，未提交
+- 基线提交：P0–P3 三批、P4/P5 + 观察/外审文档（`86dbbe2`）与 S0 修正（`816d032`）均已入库并推送；`dist/0.1.0-test.2` 是 git-ignored 本地产物
 
 ## 1. 交接约定
 
@@ -205,7 +205,7 @@ P4 新增 `tests/lifecycle.test.ts`（7 个真实宿主生命周期/连续压缩
 - 新增 6 个测试（fields 4、capsule 1、真实 in-process codemode 1）；全套 **146 测试 / 1213 断言**通过；`bun run typecheck`、`bun run typecheck:tests` 通过。
 - 设计 §6.3/§6.4/§7.1/§10.1、CHANGELOG、README 已同批修订；progress §2.5 的旧 P0 口径已标注被取代。
 - S1 保持 W=2，CHANGELOG/README 已写“旧结论可能 index-only，用 list/search/read 恢复”，不在本批改候选集。
-- `dist/pi-context-index` 的 `0.1.0-test.2` 已构建：临时 agentDir `pi install` + 真实 `session.compact()` 生成 4,888 字符 capsule、provider 摘要调用 0；dist 产物的真实 in-process codemode 冒烟保存 2 段，primary/默认 `read` 均为 `/message/content/1/text`，显式 header `read` 通过。S0 修正**未提交**，当前已完成工作已提交为 `86dbbe2`。
+- `dist/pi-context-index` 的 `0.1.0-test.2` 已构建：临时 agentDir `pi install` + 真实 `session.compact()` 生成 4,888 字符 capsule、provider 摘要调用 0；dist 产物的真实 in-process codemode 冒烟保存 2 段，primary/默认 `read` 均为 `/message/content/1/text`，显式 header `read` 通过。S0 修正已提交并推送为 `816d032`；测试包是 git-ignored 本地产物。
 
 ### 2.12 下一步（交付前剩余）
 
@@ -213,7 +213,7 @@ P4 新增 `tests/lifecycle.test.ts`（7 个真实宿主生命周期/连续压缩
 2. **三个真实任务试用**：在用户环境压缩后继续工作，记录目标保持、找回归档与失败修复；重点复核 codemode 默认 `read` 是否返回正文，以及 W=2 下长结论是否需要 `list/search/read` 恢复；不得用合成曝光替代。
 3. **Ubuntu CI**：在干净 runner 跑 install/typecheck/test/pack；Windows 已通过，失败按平台修正，不跳过。
 4. **设置/压缩失败通知**：目前仍是静默 `{cancel:true}`；若补通知，必须保持 cancel 语义并捕获通知自身。
-5. **发布授权**：P4/P5 与评审文档已提交 `86dbbe2`；S0 修正与 dist 测试包未提交。推送、打 tag、npm 发布仍需用户明确授权。
+5. **发布授权**：P4/P5 与评审文档已提交 `86dbbe2`，S0 修正已提交并推送 `816d032`。打 tag、npm 发布仍需用户明确授权；`dist/0.1.0-test.2` 是 git-ignored 本地产物。
 
 > 2026-11-02 真实样本观察：先由外审判断 S0/S1 的修法与 0.1.0 阻塞级别，再继续真实 TUI/三任务；观察记录见 [观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)。
 
@@ -319,7 +319,7 @@ bun research/benchmark/benchmark.ts
 | 2026-11-02 | P5 本地交付：重写 README/CHANGELOG，补设置示例与 codemode 注意事项；npm pack 19 文件、60.7kB；解包产物安装到临时 agentDir，真实 loader 注册工具，一次真实压缩（provider 摘要调用 0）与一次 context_index read 通过；更新 AGENTS/docs README 状态行。发布、提交与推送未执行 |
 | 2026-11-02 | 新增[真实会话两轮压缩观察](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)：首次真实任务样本的聚合指标、S0 codemode 多段结果默认字段、S1 W 候选覆盖、S2 连续压缩/恢复成本、修复选项与外审提示词；外审可经授权只读访问真实会话。同步 docs/README 与本文状态/风险。仅文档，未改代码/设计 |
 | 2026-11-02 | 提交 P4/P5、测试、基准与观察/外审文档（`86dbbe2`，25 files）；当前工作树从该提交开始 S0 修正 |
-| 2026-11-02 | 外审裁定 S0 修、S1 延后（§2.11）。S0：`primaryFieldPath` 对 codemode 多段结果取最后一个 text block；`SELECTOR_VERSION` 2；新增 fields/capsule/真实 codemode 测试；设计 §6.3/§6.4/§7.1/§10.1 同批修订。全套 146 测试 / 1213 断言通过。S1 保持 W=2 并记入 CHANGELOG/README 已知限制。生成 `dist/pi-context-index` 0.1.0-test.2 测试包；临时 agentDir 安装 + 真实压缩 + dist codemode 默认字段冒烟通过；未提交 |
+| 2026-11-02 | 外审裁定 S0 修、S1 延后（§2.11）。S0：`primaryFieldPath` 对 codemode 多段结果取最后一个 text block；`SELECTOR_VERSION` 2；新增 fields/capsule/真实 codemode 测试；设计 §6.3/§6.4/§7.1/§10.1 同批修订。全套 146 测试 / 1213 断言通过。S1 保持 W=2 并记入 CHANGELOG/README 已知限制。生成 `dist/pi-context-index` 0.1.0-test.2 测试包；临时 agentDir 安装 + 真实压缩 + dist codemode 默认字段冒烟通过；随修复提交 `816d032` 并推送 |
 
 ## 7. codemode 调用形态核实（2026-10-31 核实；2026-11-02 范围确认）
 
@@ -387,14 +387,15 @@ bun research/benchmark/benchmark.ts
 - [x] S0 修正已按外审窄规则落地：codemode 多段结果取最后一个 text block，`SELECTOR_VERSION=2`；新增 fields/capsule/真实 codemode 回归；全套 146 测试 / 1213 断言通过。
 - [x] `dist/pi-context-index` 生成 `0.1.0-test.2`；临时 agentDir 安装 + 真实压缩 + dist codemode 默认字段冒烟通过。
 - [ ] 真实 TUI 与三个真实任务试用（需用户环境，用 `0.1.0-test.2`）。
-- [ ] 发布前授权：S0 修正提交、推送、打 tag 或 npm 发布均需用户明确授权。
+- [x] S0 修正已提交并推送 `816d032`（master）；`dist/0.1.0-test.2` 为 git-ignored 本地产物。
+- [ ] 打 tag 或 npm 发布仍需用户明确授权。
 
 ## 9. 下一窗口继续提示词（可直接粘贴）
 
 ```text
 继续 pi-context-index 0.1.0。仓库就是当前工作目录；先读 AGENTS.md、docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md（尤其 §2.10 P4/P5 完成记录、§2.11 外审结论与 S0 修正、§2.12 交付前剩余、§4 风险），设计与计划是冻结输入，只有有意修订才同批更新并记录原因。不要提交、推送、打 tag 或发布，除非我明确授权。
 
-当前状态：P0–P5 源码、自动验收与本地打包完成；P4/P5 与观察/外审文档已提交 `86dbbe2`。外审裁定 S0 修、S1 延后；S0 已修正（codemode 多段结果取最后一个 text block，`SELECTOR_VERSION=2`），全套 146 测试 / 1213 断言通过；`dist/pi-context-index` 已生成 `0.1.0-test.2` 测试包。10K/50MB 基准冷 capsule 322–358ms、冷搜索 1.03–1.10s、热搜索 93–135ms、热 read 10–14ms。真实 TUI 与三个真实任务试用待用户环境；S0 修正与测试包尚未提交。
+当前状态：P0–P5 源码、自动验收与本地打包完成；P4/P5 与观察/外审文档提交于 `86dbbe2`，S0 修正提交并推送于 `816d032`。外审裁定 S0 修、S1 延后；S0 已修正（codemode 多段结果取最后一个 text block，`SELECTOR_VERSION=2`），全套 146 测试 / 1213 断言通过；`dist/pi-context-index` 已生成 `0.1.0-test.2` 测试包（git-ignored 本地产物）。10K/50MB 基准冷 capsule 322–358ms、冷搜索 1.03–1.10s、热搜索 93–135ms、热 read 10–14ms。真实 TUI 与三个真实任务试用待用户环境。
 
 交付前按顺序：
 0. 先读 docs/reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md 与 PI_CONTEXT_INDEX_REAL_COMPACTION_EXTERNAL_REVIEW.md；外审结论已落盘 §2.11：S0 修、S1 延后。不要凭单个样本改 W，也不要退回“最长 text block”方案。
@@ -402,7 +403,7 @@ bun research/benchmark/benchmark.ts
 2. 三个真实任务形态：压缩后继续工作，记录目标保持、找回归档与失败修复；重点复核 codemode 默认 read 是否返回正文、W=2 下长结论是否需要 reader 恢复；不得用合成 12 题替代，12 题已通过（capsule 4 / search 8，真实跨度断言）。
 3. 干净 Ubuntu runner 跑 bun install --frozen-lockfile --ignore-scripts、typecheck、typecheck:tests、bun test、npm pack --dry-run；Windows 已通过，失败按平台修正，不跳过。
 4. 可选：压缩/设置失败的非阻塞通知。必须保持 {cancel:true}，通知自身的异常要捕获。
-5. 只有在用户明确授权后：提交 S0 修正、推送、打 tag、npm 发布；P4/P5 已提交 86dbbe2，当前未发布。
+5. 只有在用户明确授权后：打 tag 或 npm 发布；P4/P5（86dbbe2）与 S0 修正（816d032）已提交并推送，当前未发布。
 
 重要坑：
 - overflow 测试必须用大窗口 + Pi compaction.reserveTokens:0，只让显式 "prompt is too long" 错误触发 overflow；小窗口会先被 prompt 前置 threshold 抢走。
