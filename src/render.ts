@@ -288,7 +288,7 @@ const renderSelection = (
   const cover = [
     `[Context index v1 | snapshot=${snapshotId}]`,
     `Saved messages: ${history.counts.saved}; effective: ${history.counts.effective}; live: ${history.counts.live}; quoted: ${quoted}; index-only: ${indexOnly}.`,
-    `First saved: e:${firstSaved}; last saved: e:${lastSaved}; live tail starts at ${liveStart}. Browse: context_index {"action":"list"}.`,
+    `First saved: e:${firstSaved}; last saved: e:${lastSaved}; live tail starts at ${liveStart}. Browse: context_index {"action":"list"} (direct or tools.context_index(...) in a script).`,
     "Below are dated source excerpts and recorded tool results. Continue with the latest user instructions; read a source when its omitted details matter.",
   ].join("\n");
 

@@ -1,6 +1,6 @@
 # 工作文档索引
 
-本目录保存 pi-context-index 的设计依据、落地计划、原型记录、外部评审和移植参考。仓库当前处于 **0.1.0 实现前的工作区阶段**：运行代码尚未开始，安装、发布和真实会话验证都没有发生。当前进度与交接以 [plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md](plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md) 为准。
+本目录保存 pi-context-index 的设计依据、落地计划、原型记录、外部评审和移植参考。仓库当前处于 **0.1.0 源码完成、本地打包验证阶段**：P0–P4 自动检查与 P5 打包/安装冒烟已通过，真实 TUI 与三个真实任务试用仍待用户环境；已完成一次真实会话两轮压缩观察（链路通过、胶囊待调，见 [reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md](reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)）。未提交发布。当前进度与交接以 [plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md](plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md) 为准。
 
 ## 先读什么
 
@@ -22,6 +22,10 @@
 ## 已确认的范围结论
 
 - [reviews/PI_CONTEXT_INDEX_CODEMODE_INDEXABILITY_REVIEW.md](reviews/PI_CONTEXT_INDEX_CODEMODE_INDEXABILITY_REVIEW.md) — **已确认（2026-11-02）**：0.1.0 只需索引并寻回 codemode 脚本的聚合输出与嵌套调用元数据（R1–R3）；每条嵌套调用的独立输出（R4）不寻回，作为产品级已知限制写入胶囊与 README。附 Pi 1.4.0 已核实事实、能力矩阵、路径 A 的修订清单与测试行。
+
+## 真实任务试用
+
+- [reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md](reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md) — **待外审（2026-11-02）**：首次真实会话两轮压缩的观察。记录聚合指标、S0 codemode 多段结果默认字段、S1 W 候选覆盖、S2 连续压缩/恢复成本、修复选项与可直接复制的外审提示词；数据已脱敏，文档不含正文、文件名或绝对路径；外审可在授权下只读访问真实会话（访问方式单独提供）。
 
 ## 外部评审
 
@@ -69,6 +73,7 @@
 | V0_1_IMPLEMENTATION_PLAN | 定稿，执行依据 | 阶段、产出、退出条件与夹具 |
 | V0_1_PROGRESS | 持续更新，交接依据 | 当前进度、验证、风险与下一步 |
 | CODEMODE_INDEXABILITY_REVIEW | 已确认范围（2026-11-02） | codemode 需求拆解、宿主事实、范围结论与落点 |
+| REAL_COMPACTION_OBSERVATION | 待外审（2026-11-02） | 首次真实样本指标、问题分级与修复选项 |
 | PROTOTYPE_DESIGN / HANDOFF | 冻结的历史依据 | 设计演进与一次性验证读数 |
 | 外审报告 | 冻结的历史依据 | MF 清单、证据分级与已知缺口 |
 | PRIOR_ART_SURVEY | 调研快照，随生态变化 | 同类项目、对照维度与定位建议 |

@@ -502,6 +502,42 @@ export const entryVisibility = (
   };
 };
 
+/**
+ * True for the arguments of a context_index call, direct or nested. The query
+ * itself is model-authored input that is already in the live turn; indexing it
+ * makes every search find its own request. Explicit list/read still sees the
+ * saved field, matching the self-echo rule for results.
+ */
+export const isSelfEchoToolField = (
+  entry: SessionEntry,
+  path: string,
+): boolean => {
+  if (entry.type !== "message") return false;
+  if (entry.message.role === "assistant") {
+    const match = /^\/message\/content\/(\d+)\/arguments(?:\/|$)/.exec(path);
+    if (!match || match[1] === undefined) return false;
+    const content = (entry.message as { content?: unknown }).content;
+    if (!Array.isArray(content)) return false;
+    const block = content[Number(match[1])] as
+      | { type?: unknown; name?: unknown }
+      | undefined;
+    return block?.type === "toolCall" && block.name === SELF_ECHO_TOOL_NAME;
+  }
+  if (entry.message.role === "toolResult") {
+    const match = /^\/message\/nestedCalls\/calls\/(\d+)\/arguments(?:\/|$)/.exec(
+      path,
+    );
+    if (!match || match[1] === undefined) return false;
+    const nested = (entry.message as { nestedCalls?: unknown }).nestedCalls;
+    if (typeof nested !== "object" || nested === null) return false;
+    const calls = (nested as { calls?: unknown }).calls;
+    if (!Array.isArray(calls)) return false;
+    const call = calls[Number(match[1])] as { name?: unknown } | undefined;
+    return call?.name === SELF_ECHO_TOOL_NAME;
+  }
+  return false;
+};
+
 /** Map one effective record's shown spans to owner/storage pairs. */
 export const spanFor = (
   record: EffectiveRecord,

@@ -313,6 +313,8 @@ type CapsuleDetails = {
 
 `list` 按需计算这些状态和某条记录的 shown/hidden 区间。源记录不存在时，reader 返回定位错误；首版不维护历史失效墓碑系统。压缩生成物和本工具回声登记为派生记录，不进入新候选和默认搜索；显式按 ID 仍可查看保存字段。
 
+`context_index` 自身的调用参数不是结果回声，但其中的查询串会让每次搜索命中自己的请求；因此默认搜索跳过直接调用与 codemode `nestedCalls` 中 `context_index` 的参数字段（参数被丢弃时只剩 `argumentsBytes`，不含查询文本），显式 `list`/`read` 仍可访问。该修订来自 [0.1.0 进度 §2.10](PI_CONTEXT_INDEX_V0_1_PROGRESS.md) 的 P4 真实宿主测试。
+
 ## 7. 核心算法一：字段、分块与搜索
 
 ### 7.1 统一字段视图

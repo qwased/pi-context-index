@@ -100,6 +100,15 @@ describe("chunkField", () => {
     expect(previousEnd).toBe(text.length);
   });
 
+  test("a long ASCII line uses code-unit boundaries without a segmenter pass", () => {
+    const text = "a".repeat(2_100);
+    const chunks = chunkField(field(text));
+    expect(chunks.map((chunk) => chunk.span.end - chunk.span.start)).toEqual([
+      700, 700, 700,
+    ]);
+    expect(chunks.map((chunk) => textOf(text, chunk)).join("")).toBe(text);
+  });
+
   test("CRLF is preserved verbatim", () => {
     const text = "alpha\r\n\r\nbeta\r\n";
     const chunks = chunkField(field(text));

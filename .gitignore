@@ -13,6 +13,7 @@ research/.backup/
 research/sessions/
 research/replays/
 research/prototype/out/
+research/benchmark/out/
 research/review-bundle/*.zip
 research/review-bundle/*.sha256
 

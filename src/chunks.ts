@@ -15,7 +15,6 @@ import {
 } from "./fences";
 import type { Chunk, Span, TextField } from "./model";
 import { termFrequency } from "./search";
-import { graphemeEndAfter, graphemeStartAtOrBefore } from "./reader";
 
 export const CHUNK_MIN_CHARS = 400;
 export const CHUNK_MAX_CHARS = 800;
@@ -193,15 +192,16 @@ const mergeShortBlocks = (blocks: Block[], lines: readonly SourceLine[]): Block[
   return merged;
 };
 
-const splitLineAt = (text: string, start: number, limit: number): number => {
-  const wanted = start + limit;
-  if (wanted >= text.length) return text.length;
-  const boundary = graphemeStartAtOrBefore(text, wanted);
-  if (boundary > start) return boundary;
-  return graphemeEndAfter(text, start);
-};
+const longLineSegmenter = new Intl.Segmenter(undefined, {
+  granularity: "grapheme",
+});
+const ASCII_LINE = /^[\x00-\x7F]*$/;
 
-/** Split one line that alone exceeds the chunk cap, at cluster boundaries. */
+/**
+ * Split one line that alone exceeds the chunk cap, at cluster boundaries.
+ * Segmenting once per line keeps cold indexing linear; the previous helper
+ * re-segmented the whole field for every 700-char slice.
+ */
 const splitLongLine = (
   text: string,
   line: SourceLine,
@@ -209,17 +209,54 @@ const splitLongLine = (
   lineIndex: number,
 ): Piece[] => {
   const pieces: Piece[] = [];
-  let start = line.start;
-  while (start < line.end) {
-    const end = splitLineAt(text, start, CHUNK_TARGET_CHARS);
-    if (end <= start) break;
+  const heading = rawHeadingLine === lineIndex ? { rawHeadingLine } : {};
+  const lineText = text.slice(line.start, line.end);
+  let pieceStart = line.start;
+  if (ASCII_LINE.test(lineText)) {
+    // ASCII has one code unit per grapheme cluster (CRLF is handled below),
+    // so the common log/minified-JSON case never enters Intl.Segmenter.
+    let cursor = 0;
+    while (cursor < lineText.length) {
+      let next = Math.min(cursor + CHUNK_TARGET_CHARS, lineText.length);
+      if (
+        next < lineText.length &&
+        lineText.charCodeAt(next - 1) === 13 &&
+        lineText.charCodeAt(next) === 10
+      ) {
+        next--;
+      }
+      if (next <= cursor) next = Math.min(cursor + 1, lineText.length);
+      pieces.push({
+        start: line.start + cursor,
+        end: line.start + next,
+        ...heading,
+        isList: false,
+      });
+      cursor = next;
+    }
+    return pieces;
+  }
+  for (const segment of longLineSegmenter.segment(lineText)) {
+    const segmentEnd = line.start + segment.index + segment.segment.length;
+    if (segmentEnd - pieceStart <= CHUNK_TARGET_CHARS) continue;
+    const boundary = line.start + segment.index;
+    if (boundary > pieceStart) {
+      pieces.push({
+        start: pieceStart,
+        end: boundary,
+        ...heading,
+        isList: false,
+      });
+      pieceStart = boundary;
+    }
+  }
+  if (pieceStart < line.end) {
     pieces.push({
-      start,
-      end,
-      ...(rawHeadingLine === lineIndex ? { rawHeadingLine } : {}),
+      start: pieceStart,
+      end: line.end,
+      ...heading,
       isList: false,
     });
-    start = end;
   }
   return pieces;
 };

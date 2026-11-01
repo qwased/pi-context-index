@@ -1,0 +1,54 @@
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { captureSource, projectHistory } from "../../src/source";
+import { effectiveFields } from "../../src/source";
+import { chunkField } from "../../src/chunks";
+import { Bm25Index, termFrequency, tokenize } from "../../src/search";
+import { fieldList } from "../../src/fields";
+import type { Cut } from "../../src/cut";
+
+const TURNS = 400;
+const RESULT_CHARS = 18_100;
+const fill = (prefix: string, target: number, unit = "synthetic filler 0123456789 abcdef "): string => {
+  let text = prefix;
+  while (text.length < target) text += unit;
+  return text.slice(0, target);
+};
+const manager = SessionManager.inMemory(process.cwd());
+let clock = Date.now() - TURNS * 10_000;
+for (let turn = 0; turn < TURNS; turn++) {
+  clock += 10_000;
+  manager.appendMessage({ role: "user", content: fill("user " + turn, 400), timestamp: clock });
+  const call = fauxToolCall("bash", { command: "cmd-" + turn }, { id: "call-" + turn });
+  manager.appendMessage(fauxAssistantMessage([call], { stopReason: "toolUse", timestamp: clock + 1 }));
+  const body = fill("output " + turn + "\n", RESULT_CHARS - 30) + "tail-" + turn + "\n";
+  manager.appendMessage({ role: "toolResult", toolCallId: call.id, toolName: "bash", content: [{ type: "text", text: body }], isError: false, timestamp: clock + 2 });
+  manager.appendMessage(fauxAssistantMessage(fill("work " + turn, 1500), { timestamp: clock + 3 }));
+}
+const cut: Cut = { firstKeptEntryId: "", cutIndex: manager.getBranch().length, reason: "compact-all", requestedKeep: 0, keptUserTurns: 0, totalUserTurns: 0, tailTokens: 0, tailTokenLimit: 0 };
+let t = performance.now();
+const snapshot = captureSource(manager);
+console.log("capture", (performance.now() - t).toFixed(1));
+t = performance.now();
+const history = projectHistory(snapshot, cut);
+console.log("projectHistory", (performance.now() - t).toFixed(1), "records", history.records.length);
+t = performance.now();
+const fields = history.records.flatMap((record) => effectiveFields(record));
+console.log("effectiveFields", (performance.now() - t).toFixed(1), "fields", fields.length);
+t = performance.now();
+const chunks = fields.flatMap((field) => chunkField(field));
+console.log("chunk", (performance.now() - t).toFixed(1), "chunks", chunks.length);
+t = performance.now();
+let freqCount = 0;
+for (const field of fields) freqCount += termFrequency(field.text).size;
+console.log("termFrequency(full fields)", (performance.now() - t).toFixed(1), "terms", freqCount);
+t = performance.now();
+let terms = 0;
+for (const chunk of chunks) terms += chunk.terms.size;
+console.log("chunk terms already built", (performance.now() - t).toFixed(1), "terms", terms);
+t = performance.now();
+const index = new Bm25Index(chunks.map((chunk, i) => { let length = 0; for (const n of chunk.terms.values()) length += n; return { key: String(i), terms: chunk.terms, length }; }));
+console.log("bm25", (performance.now() - t).toFixed(1));
+t = performance.now();
+const scores = index.score(tokenize("tail-399"));
+console.log("score", (performance.now() - t).toFixed(1), scores.size);

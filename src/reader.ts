@@ -21,6 +21,7 @@ import {
   captureSource,
   effectiveFields,
   entryVisibility,
+  isSelfEchoToolField,
   projectHistory,
   selfEchoRanges,
   SELF_ECHO_BEGIN,
@@ -941,6 +942,7 @@ const collectSearchFields = (
   for (const record of scopeRecords(snapshot, scope, role)) {
     for (const field of record.fields) {
       if (field.text.length === 0) continue;
+      if (isSelfEchoToolField(record.entry, field.path)) continue;
       fields.push({ record, field, ordinal: fields.length });
     }
   }

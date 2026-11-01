@@ -3,6 +3,7 @@ import {
   captureSource,
   effectiveFields,
   entryVisibility,
+  isSelfEchoToolField,
   primaryEffectiveField,
   projectHistory,
   type SourceSnapshot,
@@ -10,8 +11,10 @@ import {
 import type { Cut } from "../src/cut";
 import { readStoredField } from "../src/reader";
 import {
+  assistantEntry,
   chain,
   fakeManager,
+  toolResultEntry,
   userEntry,
 } from "./fixtures/entries";
 
@@ -288,5 +291,64 @@ describe("projectHistory", () => {
     expect(history.live).toHaveLength(0);
     expect(history.history.map((record) => record.info.id)).toEqual(["u1", "a1"]);
     expect(history.counts.live).toBe(0);
+  });
+});
+describe("self-echo tool fields", () => {
+  test("excludes context_index call arguments but keeps other tool fields", () => {
+    const assistant = assistantEntry("a1", null, [
+      {
+        type: "toolCall",
+        id: "call-1",
+        name: "context_index",
+        arguments: { action: "search", query: "echoed query" },
+      },
+      {
+        type: "toolCall",
+        id: "call-2",
+        name: "read",
+        arguments: { path: "fixture/synthetic.ts" },
+      },
+      { type: "text", text: "assistant note" },
+    ]);
+    expect(isSelfEchoToolField(assistant, "/message/content/0/arguments/query")).toBe(
+      true,
+    );
+    expect(isSelfEchoToolField(assistant, "/message/content/1/arguments/path")).toBe(
+      false,
+    );
+    expect(isSelfEchoToolField(assistant, "/message/content/2/text")).toBe(false);
+
+    const result = toolResultEntry("r1", "a1", {
+      toolName: "codemode",
+      nestedCalls: {
+        complete: true,
+        calls: [
+          {
+            id: "nested-1",
+            name: "context_index",
+            arguments: { action: "read", ref: "e:u1" },
+            status: "ok",
+          },
+          {
+            id: "nested-2",
+            name: "read",
+            arguments: { path: "fixture/synthetic.ts" },
+            status: "ok",
+          },
+        ],
+      },
+    });
+    expect(
+      isSelfEchoToolField(
+        result,
+        "/message/nestedCalls/calls/0/arguments/ref",
+      ),
+    ).toBe(true);
+    expect(
+      isSelfEchoToolField(
+        result,
+        "/message/nestedCalls/calls/1/arguments/path",
+      ),
+    ).toBe(false);
   });
 });

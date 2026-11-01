@@ -4,7 +4,7 @@ pi-context-index is an independent Pi extension: LLM-free conversation compactio
 
 - Authoritative scope: [docs/plans/PI_CONTEXT_INDEX_V0_1_DESIGN.md](docs/plans/PI_CONTEXT_INDEX_V0_1_DESIGN.md). If code and design disagree, the design wins until the design is deliberately amended.
 - Execution order: [docs/plans/PI_CONTEXT_INDEX_V0_1_IMPLEMENTATION_PLAN.md](docs/plans/PI_CONTEXT_INDEX_V0_1_IMPLEMENTATION_PLAN.md), P0 → P5. Start at P0 and do not skip its real-host exit condition.
-- Current state: workspace scaffold; the living status and handoff record is [docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md](docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md). `index.ts` registers nothing; `src/` holds only the frozen data contract, settings boundary check and the ported fence state machine. There is no working compaction or reader yet.
+- Current state: 0.1.0 source-complete and packaged locally; P0–P4 automated checks and P5 pack/install checks are green, while the real TUI pass and three real-task trials still need a user environment. The living status and handoff record is [docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md](docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md). `index.ts` registers the `context_index` reader and the single compaction hook; `src/` holds the runtime pipeline. Design §6.4 was deliberately amended for nested-call identity and dropped arguments.
 
 ## Checks
 
@@ -20,16 +20,16 @@ The locked host is Pi 1.4.0. CI runs install, package typecheck, test typecheck,
 
 ## Layout
 
-- `index.ts`: extension entry; P0 adds the tool and compaction hook here.
+- `index.ts`: extension entry; registers the `context_index` tool and the `session_before_compact` hook through `src/host.ts`.
 - `src/model.ts`: the data contract from design §6.4 (`Span`, `TextField`, `Observation`, `CapsuleDetails`, versions).
 - `src/settings.ts`: the three user settings, defaults and boundary check. File loading belongs to the host adapter.
 - `src/fences.ts`: pure fence parser/state used by chunking, cuts and rendering.
-- `src/host.ts`, `src/cut.ts`, `src/source.ts`, `src/fields.ts`, `src/chunks.ts`, `src/observations.ts`, `src/search.ts`, `src/candidates.ts`, `src/budget.ts`, `src/render.ts`, `src/reader.ts`: P0–P4 modules, created in that order.
-- `tests/`: unit and host tests; `tests/fixtures/` holds synthetic records only.
+- `src/host.ts`, `src/cut.ts`, `src/source.ts`, `src/fields.ts`, `src/chunks.ts`, `src/observations.ts`, `src/search.ts`, `src/candidates.ts`, `src/budget.ts`, `src/render.ts`, `src/reader.ts`: P0–P4 runtime modules, created in that order.
+- `tests/`: unit, real-host lifecycle, codemode and synthetic-exposure tests; `tests/helpers/` has the temporary-agentDir harness and `tests/fixtures/` holds synthetic records only.
 - `docs/`: design, plan, prototype, review and reference archive. Chinese prose; not part of the npm package.
 - `docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md`: the living 0.1.0 progress and handoff record. Update it as work proceeds; keep the design and implementation plan frozen except for deliberate amendments.
 - `reference/legacy-0.1.5/`: read-only mirror of the old implementation used for porting. Never import from it.
-- `research/`: prototype scripts and local-only outputs. Never commit real sessions, replays, model answers or absolute paths.
+- `research/`: prototype and benchmark scripts; outputs are local-only. Never commit real sessions, replays, model answers or absolute paths.
 
 ## Hard rules
 
@@ -62,7 +62,7 @@ The locked host is Pi 1.4.0. CI runs install, package typecheck, test typecheck,
 - **No host interception beyond the hook.** Do not force a prefetch, block the model's final answer, register hidden tools and re-activate them by name, or use annotations as permissions. `exposure` is `"direct"` from startup.
 - **Tests are the spec.** Each behavior change needs a state-transition test from the plan's §6 table. Fixtures are synthetic and must cover Chinese, rare characters, emoji, combining marks, CRLF, long single lines and cut points inside fences. Do not use `Math.min(...array)`/`Math.max(...array)` on candidate lists; keep the spread guard.
 - **Performance.** Cold index ≤ 2 s and hot read/query ≤ 200 ms on a 10K-message / 50 MB mixed session are the first benchmarks. Remove duplicate serialization, duplicate tokenization and whole-file re-reads before considering a disk cache. Caches must not change ordering or capsule bytes.
-- **Data boundary.** `research/` outputs are local. Never commit or quote real session text, file names, absolute paths or model answers. `research/prototype/out/`, backups and replays are git-ignored. Docs use synthetic examples only.
+- **Data boundary.** `research/` outputs are local. Never commit or quote real session text, file names, absolute paths or model answers. `research/prototype/out/`, `research/benchmark/out/`, backups and replays are git-ignored. Docs use synthetic examples only.
 - **Backups.** Keep backups outside the published tree, in git-ignored `research/.backup/`; `*.bak` is excluded from `files`.
 - **Release.** Add user-facing changes under `CHANGELOG.md` `[Unreleased]`. Do not commit, push, tag or publish without explicit user authorization. The package version starts at 0.1.0.
 

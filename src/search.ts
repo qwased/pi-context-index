@@ -10,9 +10,10 @@
 export const BM25_K1 = 1.2;
 export const BM25_B = 0.75;
 
-const LATIN_RUN = /[A-Za-z0-9_]+(?:[./\\][A-Za-z0-9_.-]+)*/g;
-const CJK_RUN =
-  /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}]+/gu;
+const TOKEN_RUN =
+  /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}]+|[A-Za-z0-9_]+(?:[./\\][A-Za-z0-9_.-]+)*/gu;
+const CJK_TEST = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}]/u;
+const SIMPLE_LATIN = /^[a-z0-9]+$/;
 const LIST_ITEM_RE = /^\s*(?:[-*+]|\d{1,4}[.)])\s+/;
 
 const splitCamel = (part: string): string[] =>
@@ -22,10 +23,14 @@ const splitCamel = (part: string): string[] =>
     .split(/\s+/)
     .filter((piece) => piece.length > 0);
 
-const identifierTokens = (run: string): string[] => {
-  const tokens = new Set<string>();
+const identifierTokens = (
+  run: string,
+  visit: (token: string) => void,
+): void => {
   const full = run.toLowerCase();
-  if (full.length > 0) tokens.add(full);
+  if (full.length > 0) visit(full);
+  if (SIMPLE_LATIN.test(run)) return;
+  const tokens = new Set<string>();
   for (const segment of run.split(/[_./\\]+/)) {
     if (!segment) continue;
     for (const piece of splitCamel(segment)) {
@@ -33,37 +38,46 @@ const identifierTokens = (run: string): string[] => {
       if (token.length > 0) tokens.add(token);
     }
   }
-  return [...tokens];
+  for (const token of tokens) {
+    if (token !== full) visit(token);
+  }
 };
 
-const cjkTokens = (run: string): string[] => {
-  if (run.length === 1) return [run];
-  const tokens: string[] = [];
-  for (let index = 0; index + 1 < run.length; index++) {
-    tokens.push(run.slice(index, index + 2));
+const visitCjkTokens = (
+  run: string,
+  visit: (token: string) => void,
+): void => {
+  if (run.length === 1) {
+    visit(run);
+    return;
   }
-  return tokens;
+  for (let index = 0; index + 1 < run.length; index++) {
+    visit(run.slice(index, index + 2));
+  }
+};
+
+/** Visit normalized tokens once; termFrequency avoids an intermediate array. */
+const visitTokens = (text: string, visit: (token: string) => void): void => {
+  for (const match of text.matchAll(TOKEN_RUN)) {
+    const run = match[0];
+    if (!run) continue;
+    if (CJK_TEST.test(run)) visitCjkTokens(run, visit);
+    else identifierTokens(run, visit);
+  }
 };
 
 /** Tokenize saved text for matching. Never used to reconstruct offsets. */
 export const tokenize = (text: string): string[] => {
   const tokens: string[] = [];
-  for (const match of text.matchAll(LATIN_RUN)) {
-    const run = match[0];
-    if (run) tokens.push(...identifierTokens(run));
-  }
-  for (const match of text.matchAll(CJK_RUN)) {
-    const run = match[0];
-    if (run) tokens.push(...cjkTokens(run));
-  }
+  visitTokens(text, (token) => tokens.push(token));
   return tokens;
 };
 
 export const termFrequency = (text: string): Map<string, number> => {
   const terms = new Map<string, number>();
-  for (const token of tokenize(text)) {
+  visitTokens(text, (token) => {
     terms.set(token, (terms.get(token) ?? 0) + 1);
-  }
+  });
   return terms;
 };
 

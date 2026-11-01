@@ -213,7 +213,7 @@ export const registerContextIndex = (
     description:
       "Inspect the saved session: list records or one record's fields and headings, search saved text (BM25 terms or literal), and read exact stored fields with bounded windows or full:true. The continuation summary points at stored addresses.",
     promptGuidelines: [
-      "Use the latest user instructions with the live tail. The context index quotes saved history. When an omitted instruction matters, use context_index: list to browse, search to locate, read to inspect. Use full:true when the complete instruction is needed. A partial result includes the next read. Reuse source text already in context.",
+      "The context index quotes saved history. Use the latest user instructions with the live tail. When an omitted instruction matters, call context_index (directly, or as tools.context_index(...) inside a codemode script): list to browse, search to locate, read to inspect. Use full:true for a complete instruction; a partial result carries the next read. Reuse source text already in context.",
     ],
     exposure: "direct",
     parameters: readerParameters,
