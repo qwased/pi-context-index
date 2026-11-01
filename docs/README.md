@@ -25,7 +25,8 @@
 
 ## 真实任务试用
 
-- [reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md](reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md) — **待外审（2026-11-02）**：首次真实会话两轮压缩的观察。记录聚合指标、S0 codemode 多段结果默认字段、S1 W 候选覆盖、S2 连续压缩/恢复成本、修复选项与可直接复制的外审提示词；数据已脱敏，文档不含正文、文件名或绝对路径；外审可在授权下只读访问真实会话（访问方式单独提供）。
+- [reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md](reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md) — **已完成外审（2026-11-02）**：首次真实会话两轮压缩的观察。记录聚合指标、S0 codemode 多段结果默认字段、S1 W 候选覆盖、S2 连续压缩/恢复成本、修复选项与外审提示词；数据已脱敏，文档不含正文、文件名或绝对路径。
+- [reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_EXTERNAL_REVIEW.md](reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_EXTERNAL_REVIEW.md) — **外审裁定（2026-11-02）**：S0 作为实现阻断修（窄范围 codemode 最后 text block，提升 `SELECTOR_VERSION`）；S1 暂不改 W=2，继续收集真实任务证据。附最小修改清单、发布说明与编辑投影边界。
 
 ## 外部评审
 

@@ -21,9 +21,15 @@
 - Tokenizer and long-line chunking use single-pass scanning and an ASCII fast path; cold search on the 50 MB benchmark dropped from multi-second behavior to about 1.1 s while keeping cold/hot output byte-identical.
 - The capsule cover and the always-on guideline use mode-neutral wording so the same text works for a direct tool call and for `tools.context_index(...)` inside a codemode script.
 
+### Fixed
+
+- Default reads and capsule result excerpts now select the saved result body of multi-part codemode tool results instead of the `Script completed/failed ... Output:` status header. Explicit field reads still address the header or any other saved field. The capsule recipe selector version is now 2; the field format and `FIELD_VERSION` are unchanged.
+
 ### Known limitations
 
 - Pi does not persist per-nested-call codemode outputs; the plugin indexes the saved parent result and nested error/status records, not the call output. Scripts must `return` or `text()` what should remain.
+- The capsule still selects only the two most recent non-live assistant texts (W=2). Older conclusions may remain index-only and require `list`/`search`/`read` recovery; candidate changes await more real-task evidence.
+- A context-edited codemode result resolves from the replacement entry, which does not carry the original `toolName`; its default field remains the first replacement text block. Codemode output that embeds images or a trailing image note may likewise leave the last text block as that note rather than the full aggregate body.
 - `appendContextEdit` in Pi 1.4 cannot target a compaction checkpoint. The projection boundary is kept for forward compatibility and tested with a saved record; no host API path is claimed.
 - Real TUI readability and three real-task trials are still pending a user environment. 0.1.0 is not published.
 

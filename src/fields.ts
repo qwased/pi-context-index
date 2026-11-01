@@ -252,6 +252,42 @@ export const fieldList = (entry: SessionEntry): TextField[] => [
   ...enumerateFields(entry),
 ];
 
+/**
+ * First or last text block path under one content base. The normal rule is the
+ * first text block; codemode results are the one exception because Pi saves
+ * [{status header}, ...output] and the default read should be the output.
+ */
+const textBlockPath = (
+  base: string,
+  content: readonly unknown[],
+  last: boolean,
+): string | undefined => {
+  if (last) {
+    for (let index = content.length - 1; index >= 0; index--) {
+      const part: unknown = content[index];
+      if (
+        isRecord(part) &&
+        part["type"] === "text" &&
+        typeof part["text"] === "string"
+      ) {
+        return joinPointer(joinPointer(base, index), "text");
+      }
+    }
+    return undefined;
+  }
+  for (let index = 0; index < content.length; index++) {
+    const part: unknown = content[index];
+    if (
+      isRecord(part) &&
+      part["type"] === "text" &&
+      typeof part["text"] === "string"
+    ) {
+      return joinPointer(joinPointer(base, index), "text");
+    }
+  }
+  return undefined;
+};
+
 /** The field read ref shows when the caller does not pass a field. */
 export const primaryFieldPath = (entry: SessionEntry): string | undefined => {
   switch (entry.type) {
@@ -270,33 +306,18 @@ export const primaryFieldPath = (entry: SessionEntry): string | undefined => {
       const content = message.content;
       if (typeof content === "string") return "/message/content";
       if (!Array.isArray(content)) return undefined;
-      for (let index = 0; index < content.length; index++) {
-        const part: unknown = content[index];
-        if (
-          isRecord(part) &&
-          part["type"] === "text" &&
-          typeof part["text"] === "string"
-        ) {
-          return joinPointer(joinPointer("/message/content", index), "text");
-        }
-      }
-      return undefined;
+      // Pi 1.4 saves a codemode result as [status header, ...output]. Selecting
+      // the last text block keeps the default read and observation excerpts on
+      // the output; other tools keep the first-block rule until their saved
+      // shapes have evidence. See design §7.1 and progress §2.11.
+      const last = message.role === "toolResult" && message.toolName === "codemode";
+      return textBlockPath("/message/content", content, last);
     }
     case "custom_message": {
       const content = entry.content;
       if (typeof content === "string") return "/content";
       if (!Array.isArray(content)) return undefined;
-      for (let index = 0; index < content.length; index++) {
-        const part: unknown = content[index];
-        if (
-          isRecord(part) &&
-          part["type"] === "text" &&
-          typeof part["text"] === "string"
-        ) {
-          return joinPointer(joinPointer("/content", index), "text");
-        }
-      }
-      return undefined;
+      return textBlockPath("/content", content, false);
     }
     case "compaction":
     case "branch_summary":
@@ -306,17 +327,7 @@ export const primaryFieldPath = (entry: SessionEntry): string | undefined => {
       const content = entry.replacement.content;
       if (typeof content === "string") return "/replacement/content";
       if (!Array.isArray(content)) return undefined;
-      for (let index = 0; index < content.length; index++) {
-        const part: unknown = content[index];
-        if (
-          isRecord(part) &&
-          part["type"] === "text" &&
-          typeof part["text"] === "string"
-        ) {
-          return joinPointer(joinPointer("/replacement/content", index), "text");
-        }
-      }
-      return undefined;
+      return textBlockPath("/replacement/content", content, false);
     }
     default:
       return undefined;

@@ -118,5 +118,5 @@ export interface CapsuleDetails {
 
 export const DETAILS_KIND = "pi-context-index" as const;
 export const SCHEMA_VERSION = 1 as const;
-export const SELECTOR_VERSION = 1;
+export const SELECTOR_VERSION = 2;
 export const FIELD_VERSION = 1;

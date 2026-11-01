@@ -212,6 +212,8 @@ pi-context-index/
 
 `read ref` 始终读取这个实际存储条目，不自动把旧记录替换成最新版。`list ref=e:old` 展示原始字段，并额外给出当前生效修订的 `ref=e:edit` 入口；`list ref=e:edit` 列出 replacement 字段。主文本字段从被指定的存储条目解析，edit entry 的主字段为 replacement 中的文本字段。这消除了同一地址有时表示原始正文、有时表示投影正文的歧义。
 
+工具结果的主文本字段按已保存的角色与工具名选择；具体规则在 §7.1。编辑后的 replacement 不携带原 `toolName`，仍按 replacement 中的文本字段解析，属于已知边界。
+
 ### 6.4 最小数据契约
 
 ```ts
@@ -277,7 +279,7 @@ type CapsuleDetails = {
   firstKeptEntryId: string;
   snapshotId: string;
   recipe: {
-    selectorVersion: 1;
+    selectorVersion: 2;
     fieldVersion: 1;
     budgetChars: number;
     contextWindow: number;
@@ -298,6 +300,8 @@ type CapsuleDetails = {
 ```
 
 嵌套调用没有独立结果条目，`resultId` 固定为承载 `nestedCalls` 的父结果条目，配对键为 `(resultId, nestedIndex)`；直接工具没有 `nestedIndex`。该修订来自 [0.1.0 进度 §7.2](PI_CONTEXT_INDEX_V0_1_PROGRESS.md)。
+
+`recipe.selectorVersion` 于 2026-11-02 由 1 升至 2：codemode 多段工具结果的默认字段改为最后一个 text block。字段枚举和地址格式未变，`fieldVersion` 保持 1；原因与测试见 [进度 §2.11](PI_CONTEXT_INDEX_V0_1_PROGRESS.md#L176)。
 
 `TextField.text` 复用已保存字符串，`Chunk` 保存跨度而不是正文副本。`details` 保存来源、选择跨度和小型统计，不再保存逐消息状态数组或正文副本。工具结果的 `details` 也只保存读取区间、成本、游标等结构。
 
@@ -322,6 +326,8 @@ type CapsuleDetails = {
 `enumerateFields(entry)` 返回字段列表，而不是带标题的长拼接字符串。
 
 自动索引包括用户/助手文本、直接工具参数、工具结果文本、bashExecution 的 command/output、codemode 已保存的 nestedCalls 参数/错误/状态；数值与布尔值使用规范标量字符串，保留字段地址。图片二进制和 thinking 块不进入默认候选与搜索。显式字段读取可以访问该记录中已保存的文本或标量。
+
+默认主字段按条目类型和已保存的 `toolName` 选择：普通消息与普通工具结果取第一个 text block；`toolName === "codemode"` 的多段工具结果取最后一个 text block。Pi 1.4 把 codemode 结果保存为 `[{status header}, ...output]`，因此最后一段是正文/错误，而不是状态 header。该例外只影响默认字段和观测摘录；显式 `field` 与字段枚举不变，其他工具的多段形态在获得证据前仍取第一段。
 
 字段路径采用 JSON Pointer，解决任意参数键中包含点号时的寻址歧义。字符偏移统一采用 JavaScript UTF-16 半开区间 `[start,end)`。原始 CRLF 不归一化；Unicode 字符簇边界通过 `Intl.Segmenter` 对齐，结果回显实际区间。
 
@@ -481,7 +487,7 @@ function buildCapsule(snapshot, cut, config, modelWindow) {
 | `search` | `query`、`match?:"terms"\|"literal"`、`role?`、`scope?`、`cursor?` | 默认最多 10 个命中，附原始片段和直接读取参数 |
 | `read` | `ref`、`field?`、`offset?`、`length?`、`full?`、`cursor?` | 指定保存字段的原文区间，附实际范围、是否读完及下一步 |
 
-`scope` 为 `branch` 或 `session`：默认搜索当前分支的有效文本；`session` 搜索本文件保存的原始文本与编辑记录，并标明分支/修订来源。显式 `read ref` 是地址读取，可以读取本文件内的历史原始记录。`field` 缺省使用该条目的主文本字段；多字段通过 `list ref` 选择。
+`scope` 为 `branch` 或 `session`：默认搜索当前分支的有效文本；`session` 搜索本文件保存的原始文本与编辑记录，并标明分支/修订来源。显式 `read ref` 是地址读取，可以读取本文件内的历史原始记录。`field` 缺省使用该条目的主文本字段（codemode 多段工具结果取最后一个 text block，见 §7.1）；多字段通过 `list ref` 选择。显式 `field` 始终按 JSON Pointer 读取存储条目。
 
 ```json
 {"action":"list","role":"user"}

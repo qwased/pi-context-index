@@ -145,6 +145,7 @@ The real-host harness uses a temporary cwd and temporary `PI_CODING_AGENT_DIR`; 
 - **Deep reads can cost more than the hidden text.** A `full:true` read can exceed the original excerpt; compression pays off when history is not immediately re-read or the capsule is reused across turns.
 - **No privacy scanner.** The plugin reads the same plaintext session records Pi already saves. It does not add a separate redaction or permission system.
 - **Codemode nested output is a known product limit.** Per-call outputs are not persisted by Pi, so the plugin can only navigate the parent result and nested errors/status. Scripts that need evidence should return it.
+- **Capsule recall is bounded by recency.** The capsule selects the two most recent non-live assistant texts; older conclusions may remain index-only. `list`, `search` and `read` remain the recovery path.
 - **Real TUI and real-task evidence is still pending.** Synthetic performance and exposure checks are green; the real TUI and three task trials require a user environment.
 
 ## Documentation

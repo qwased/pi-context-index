@@ -208,6 +208,90 @@ describe("primary fields", () => {
     expect(primaryFieldPath(contextEditEntry("e2", null, "u1", null))).toBeUndefined();
     expect(primaryFieldOf(userEntry("u1", null, "plain"))?.text).toBe("plain");
   });
+
+  test("codemode multi-part results select the last text block", () => {
+    const header = "Script completed\nWall time 0.0 seconds\nOutput:\n";
+    const shortBody = toolResultEntry("r-short", null, {
+      toolName: "codemode",
+      content: [
+        { type: "text", text: header },
+        { type: "text", text: "short body" },
+      ],
+    });
+    expect(primaryFieldPath(shortBody)).toBe("/message/content/1/text");
+    expect(primaryFieldOf(shortBody)?.text).toBe("short body");
+
+    const longBody = toolResultEntry("r-long", null, {
+      toolName: "codemode",
+      content: [
+        { type: "text", text: header },
+        { type: "text", text: "x".repeat(2_000) },
+      ],
+    });
+    expect(primaryFieldPath(longBody)).toBe("/message/content/1/text");
+    expect(primaryFieldOf(longBody)?.text).toBe("x".repeat(2_000));
+  });
+
+  test("codemode skips trailing non-text blocks and keeps JSON text raw", () => {
+    const header = "Script completed\nWall time 0.0 seconds\nOutput:\n";
+    const json = '{"ok":true,"count":42}';
+    const entry = toolResultEntry("r-json", null, {
+      toolName: "codemode",
+      content: [
+        { type: "text", text: header },
+        { type: "text", text: json },
+        { type: "image", mimeType: "image/png", data: "AA==" },
+      ],
+    });
+    expect(primaryFieldPath(entry)).toBe("/message/content/1/text");
+    expect(primaryFieldOf(entry)?.text).toBe(json);
+  });
+
+  test("non-codemode multi-part results still use the first text block", () => {
+    const entry = toolResultEntry("r-first", null, {
+      toolName: "bash",
+      content: [
+        { type: "text", text: "first block" },
+        { type: "text", text: "second block" },
+      ],
+    });
+    expect(primaryFieldPath(entry)).toBe("/message/content/0/text");
+
+    const assistant = assistantEntry("a-thinking", null, [
+      { type: "thinking", thinking: "private reasoning" },
+      { type: "text", text: "visible answer" },
+    ]);
+    expect(primaryFieldPath(assistant)).toBe("/message/content/1/text");
+    expect(primaryFieldOf(assistant)?.text).toBe("visible answer");
+  });
+});
+
+describe("codemode default reads", () => {
+  test("the body is the default and the header stays addressable", () => {
+    const header = "Script completed\nWall time 0.0 seconds\nOutput:\n";
+    const entries = [
+      toolResultEntry("r-read", null, {
+        toolName: "codemode",
+        content: [
+          { type: "text", text: header },
+          { type: "text", text: "short body" },
+        ],
+      }),
+    ];
+    const body = readStoredField(entries, "e:r-read");
+    expect(body.ok).toBe(true);
+    if (body.ok) {
+      expect(body.field.path).toBe("/message/content/1/text");
+      expect(body.field.text).toBe("short body");
+    }
+    const explicit = readStoredField(
+      entries,
+      "e:r-read",
+      "/message/content/0/text",
+    );
+    expect(explicit.ok).toBe(true);
+    if (explicit.ok) expect(explicit.field.text).toContain("Script completed");
+  });
 });
 
 describe("stored field reads", () => {

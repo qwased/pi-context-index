@@ -298,6 +298,48 @@ describe("codemode and nested observations", () => {
     );
     expect(capsule.details.shown.every((span) => !span.field.includes("/details"))).toBe(true);
   });
+
+  test("a multi-part codemode result quotes the body and records its field", () => {
+    const b = chain();
+    b.user("u1", "Run the codemode script and keep its output.");
+    b.assistant("a1", [
+      {
+        type: "toolCall",
+        id: "call-code",
+        name: "codemode",
+        arguments: { code: "return 'REAL BODY';" },
+      },
+    ]);
+    b.toolResult("r3", {
+      toolCallId: "call-code",
+      toolName: "codemode",
+      content: [
+        {
+          type: "text",
+          text: "Script completed\nWall time 0.0 seconds\nOutput:\n",
+        },
+        { type: "text", text: "REAL BODY: aggregate output line" },
+      ],
+    });
+    b.user("u2", "Live continuation.");
+    const snapshot = captureSource(fakeManager(b.entries));
+    const history = projectHistory(snapshot, manualCut(snapshot, "u2"));
+    const capsule = buildCapsule({
+      history,
+      config: { viewMaxChars: 12_000, keepUserTurns: 1 },
+      contextWindow: 200_000,
+    });
+
+    expect(capsule.text).toContain("R e:r3 | full | codemode");
+    expect(capsule.text).toContain("REAL BODY: aggregate output line");
+    expect(capsule.text).not.toContain("Script completed");
+    const spans = capsule.details.shown.filter((span) => span.ownerId === "r3");
+    expect(spans.length).toBeGreaterThan(0);
+    expect(
+      spans.every((span) => span.field === "/message/content/1/text"),
+    ).toBe(true);
+    expect(capsule.details.recipe.selectorVersion).toBe(2);
+  });
 });
 
 describe("selection depth and related history", () => {

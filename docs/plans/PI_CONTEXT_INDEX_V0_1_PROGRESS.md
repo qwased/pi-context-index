@@ -2,10 +2,10 @@
 
 - 版本：0.1.0（未发布）
 - 最近更新：2026-11-02
-- 状态：P0–P5 源码与本地验证完成；P4 的自动验收（compact-all、重启/切树/fork/四种编辑、连续 10 次压缩、12 题曝光、10K/50MB 基准、codemode 8 条迁移）全部通过；P5 打包、临时 agentDir 安装与压缩+读取冒烟通过；已完成一次真实会话两轮压缩观察（链路通过、胶囊待调，见 [观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)）。真实 TUI 与三个真实任务试用仍待用户环境，未提交发布。下一窗口提示见 §9
+- 状态：P0–P5 源码与本地验证完成；P4 自动验收（compact-all、重启/切树/fork/四种编辑、连续 10 次压缩、12 题曝光、10K/50MB 基准、codemode 8 条迁移）与 P5 打包/安装冒烟通过；真实会话两轮压缩观察已完成，外审裁定 S0 修、S1 延后；S0 已修正（`SELECTOR_VERSION=2`，见 §2.11），S1 保持 W=2 并记入已知限制。`dist/pi-context-index` 已生成 `0.1.0-test.2` 测试包，临时 agentDir 安装与真实压缩/codemode 冒烟通过；真实 TUI 与三个真实任务试用仍待用户环境，未发布。下一窗口提示见 §9
 - 设计依据：[V0.1 设计](./PI_CONTEXT_INDEX_V0_1_DESIGN.md)
 - 执行依据：[V0.1 落地计划](./PI_CONTEXT_INDEX_V0_1_IMPLEMENTATION_PLAN.md)
-- 基线提交：P0–P3 的三批提交已入库；P4/P5 改动尚未提交，用 `git status` 查看
+- 基线提交：P0–P3 三批与 P4/P5 + 观察/外审文档已入库（最新 `86dbbe2`）；S0 修正与测试包在当前工作树，未提交
 
 ## 1. 交接约定
 
@@ -62,7 +62,7 @@
 ### 2.2 未完成与已知边界
 
 - **真实 TUI 与三个真实任务试用**：需要用户环境，尚未执行；合成 12 题与真实宿主测试不能替代。
-- **真实任务试用（首次观察，2026-11-02）**：一次真实会话的两轮压缩观察见 [观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)；结论为“链路通过、胶囊待调”。S0 是 codemode 多段结果的默认字段取 header；S1 是 W 只取最近两条，长结论 0 入选；修复方案待外审，本次未改代码/设计。外审可经授权只读访问真实会话，文档不记录路径。
+- **真实任务试用（首次观察，2026-11-02）**：一次真实会话的两轮压缩观察见 [观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)；结论为“链路通过、胶囊待调”。外审裁定 S0 修、S1 延后，见 §2.11。S0 已修正：codemode 多段结果默认取最后一个 text block，`SELECTOR_VERSION=2`；S1 保持 W=2 并记入 CHANGELOG/README 已知限制。真实 TUI 与三个真实任务仍是发布门槛。
 - **npm 发布与最终提交/推送**：按用户授权边界，尚未执行；本地打包与安装冒烟已完成。
 - **R4（每条嵌套调用的独立执行输出）**：**不在 0.1.0 范围**。宿主不落盘，插件不监听 `tool_execution_end`、不新增 custom 条目；范围为 R1–R3，见 §7 和[审阅稿 §0](../reviews/PI_CONTEXT_INDEX_CODEMODE_INDEXABILITY_REVIEW.md)。
 - **Pi 1.4 不能通过 `appendContextEdit` 编辑压缩检查点**：真实宿主测试验证了 API 拒绝；检查点下界用一条写入临时会话文件的合成 `context_edit` 记录覆盖真实投影路径，详见 §2.10。
@@ -75,11 +75,11 @@
 bun 1.4.4 / Node 24.19.0 / Pi 1.4.0 / TypeScript 7.0.2
 bun run typecheck                                -> pass
 bun run typecheck:tests                          -> pass
-bun test                                         -> 140 pass, 0 fail, 1183 expect() calls
-npm pack --dry-run                               -> 19 files, 60.7 kB tarball
+bun test                                         -> 146 pass, 0 fail, 1213 expect() calls
+npm pack --dry-run                               -> 19 files, 61.4 kB tarball
 ```
 
-P4 新增 `tests/lifecycle.test.ts`（7 个真实宿主生命周期/连续压缩测试）、`tests/exposure.test.ts`（1 个 12 题合成曝光测试）、`tests/codemode.test.ts`（8 个真实 in-process codemode 状态迁移测试）和 `tests/helpers/host.ts`（临时 cwd/agentDir 共享夹具）。P5 安装冒烟在临时 agentDir 用解包产物完成一次压缩和一次读取，见 §2.10。
+P4 新增 `tests/lifecycle.test.ts`（7 个真实宿主生命周期/连续压缩测试）、`tests/exposure.test.ts`（1 个 12 题合成曝光测试）、`tests/codemode.test.ts`（8 个真实 in-process codemode 状态迁移测试）和 `tests/helpers/host.ts`（临时 cwd/agentDir 共享夹具）。P5 安装冒烟在临时 agentDir 用解包产物完成一次压缩和一次读取，见 §2.10。S0 修正另加 6 个测试（fields 4、capsule 1、真实 codemode 1），见 §2.11。
 
 本机 10K 消息 / 50MB 合成基准（Windows / Bun 1.4.4）：
 
@@ -106,7 +106,7 @@ P4 新增 `tests/lifecycle.test.ts`（7 个真实宿主生命周期/连续压缩
 
 - **切点暂时用宿主的准备结果。** `buildThinCapsule` 直接使用 `event.preparation.firstKeptEntryId`，不自建 `cut.ts`。原因是 P0 先验证真实宿主链路；该切点是宿主按 `keepRecentTokens` 算出的消息/工具事务边界，不会以孤立 `toolResult` 开头。P1 用插件自己的 `keep:N` 与 tail 上限替换。
 - **P0 续接文本只引用用户原文。** 选中“被压缩前缀中的第一条非空用户消息 + 最近三条”，按源顺序引用；每条是主文本字段的完整原文或经 grapheme 对齐的前缀。整体硬上限取 `DEFAULT_SETTINGS.viewMaxChars`（12,000）。助手工作说明、工具结果和操作导航留给 P2 的候选集与渲染器。
-- **主文本字段口径。** 字符串 `message.content` 为 `/message/content`；数组内容取第一个文本块 `/message/content/<i>/text`；`custom_message` 同理使用 `/content`；compaction/branch summary 使用 `/summary`。显式 `field` 按 JSON Pointer 解析，只接受保存的字符串。P1 用统一的字段迭代器替换。
+- **主文本字段口径。** 字符串 `message.content` 为 `/message/content`；数组内容取第一个文本块 `/message/content/<i>/text`；`custom_message` 同理使用 `/content`；compaction/branch summary 使用 `/summary`。显式 `field` 按 JSON Pointer 解析，只接受保存的字符串。P1 用统一的字段迭代器替换。**2026-11-02 外审后修正：`toolResult` 且 `toolName === "codemode"` 的多段结果改取最后一个 text block；其他条目仍取第一个。见 §2.11 与设计 §7.1。**
 - **details 结构化但不带正文。** `CapsuleDetails` 的冻结字段均已填充；`snapshotId` 是会话 ID、分支头、水位、recipe 和 shown spans 的规范 JSON 的 SHA-256 前 12 位十六进制。`counts` 基于原始分支近似（没有编辑投影）：saved/effective 相同、live 从切点起算、quoted 按显示跨度去重、index-only 为余数。P1 用真实有效历史替换这些计数。
 - **P0 reader 读取整字段。** 没有 `offset`/`length`/`full`/cursor/run budget；工具结果正文就是保存字段的完整字符串，`details` 只带地址、长度和 `complete:true`。P3 会整体替换为有界窗口、游标和累计预算；P0 不是为了日常安装使用。宿主测试另外用 40,000 字符的单行用户文本验证了续接引用的 grapheme 对齐截断与整字段逐字回读。
 - **失败路径是硬约束。** 钩子把所有构建错误和 abort 都收敛为 `{cancel:true}`，因为向宿主返回空值会触发默认模型摘要。P0 暂不做用户可见的错误通知；上报在后续阶段补，不能反过来破坏 cancel 语义。
@@ -173,13 +173,47 @@ P4 新增 `tests/lifecycle.test.ts`（7 个真实宿主生命周期/连续压缩
 - **搜索自回声修复。** 真实宿主 search 会命中当前 `context_index` 工具调用的 query 参数，导致每次搜索先找到自己的请求。新增 `isSelfEchoToolField`：默认搜索跳过直接调用和 codemode nestedCalls 中 `context_index` 的参数；显式 list/read 仍可访问。设计 §6.5 已同批注明原因与来源。
 - **P5 打包与安装。** `npm pack --dry-run` 为 19 文件、60.7kB（仅 entry/src/README/LICENSE/CHANGELOG）；解包产物安装到临时 agentDir 后，真实 `DefaultResourceLoader` 从包的 `pi.extensions` 加载并注册 `context_index`；真实 `session.compact()` 生成 4,888 字符 capsule（compaction provider 调用 0），随后工具 read 返回首条用户原文。临时目录与真实 `~/.pi/agent` 完全隔离。
 
-### 2.11 下一步（交付前剩余）
+### 2.11 外审结论与 S0/S1 修正（2026-11-02）
 
-1. **真实 TUI**：手动运行一次手动 `/compact`、一次 threshold/overflow 与一次 `context_index`，检查结果行可读性、通知和错误展示；只做必要可读性调整。
-2. **三个真实任务试用**：在用户环境压缩后继续工作，记录目标保持、找回归档与失败修复；不得用合成曝光替代。
+**外审结论。** [外部评审](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_EXTERNAL_REVIEW.md) 的裁定已核对采纳：
+
+- **S0 修**：`primaryFieldPath` 对 `toolName === "codemode"` 的多段 `toolResult` 取最后一个 text block；其他条目保持第一个 text block。默认 `read`、观测摘录和胶囊 `R` 行通过共享主字段自动获得修复；不改 `observations.ts`、`reader.ts`、`render.ts` 的选择或分配逻辑。
+- **S1 延后**：0.1.0 保持 W=2。外审认为一个会话两轮压缩不是独立样本；预算“只用 24.7%”不是分配器故障，`neededChars` 是固定候选集成本。若后续真实任务重复出现长结论 0 入选，再按“固定额外低优先级助手候选 + 现有分配器”修订设计，不按剩余预算临时造候选。
+- 0.1.0 发布前仍要求真实 TUI、三个真实任务和旧插件同任务对照（设计 §13.2）；S1 延后不等于跳过这些验收。
+
+**S0 实施范围。**
+
+1. `src/fields.ts`：在 `primaryFieldPath` 内增加窄规则；`content` 为数组且 `role === "toolResult"`、`toolName === "codemode"` 时反向找第一个 text block。无 text block 时仍返回 undefined；字符串 content、其他 role、其他工具、assistant thinking+text、单段结果、嵌套 error 路径不变。
+2. 版本：`SELECTOR_VERSION` 1 → 2；`FIELD_VERSION`、`SCHEMA_VERSION` 不变。设计 §6.4 同步。
+3. 设计：§6.3、§7.1、§10.1 写明默认字段规则与编辑边界；§6.4 记录升版原因。
+4. 测试：
+   - `tests/fields.test.ts`：短正文/长正文、默认 `read` 返回正文且显式 header 可读、JSON 正文原样、非 codemode 多段仍取第一段、assistant thinking+text 不变、末尾 image 跳过。
+   - `tests/capsule.test.ts`：两段 codemode 的 `R` 行包含正文而非 header，`details.shown` 指向 body 字段；`details.recipe.selectorVersion === 2`。
+   - `tests/codemode.test.ts`：真实 in-process codemode 两段结果上断言 `primaryFieldOf`/默认 `read` 为 body；现有 `messageText` 拼接路径不足以发现此缺陷。
+5. 文档：CHANGELOG 的 Fixed/Known limitations；README 的 W=2 已知限制；progress §2.5 的旧 P0 口径标注已被本修正取代，§4 风险表更新。
+6. 测试包：在 `dist/pi-context-index` 生成 `0.1.0-test.2`，只含 entry/src/README/LICENSE/CHANGELOG，并写 BUILD.txt/INSTALL_TEST.md；用临时 agentDir 做一次真实 `pi install` + `session.compact()` + 默认 `read` 冒烟后交给用户实测。
+
+**明确边界（不在本次修）。**
+
+- 编辑后的 codemode toolResult：replacement 不携带原 `toolName`，默认按 replacement 的第一个 text block；要覆盖需 owner-aware 解析，另立测试与设计修订。
+- codemode 含 image 或 `Note: models.generateImages()...` 尾注：最后 text block 可能只是尾注/半段正文；本次不维护 header/尾注文案列表，记录为已知边界。
+- 其他工具的多段结果、W=3、预算感知额外候选、reader 默认拼接所有 text 段均不在 0.1.0 修改。
+
+**执行结果（2026-11-02）。** 代码、测试、设计与发布说明已落地：
+
+- `src/fields.ts` 增加 codemode 最后 text block 规则；`src/model.ts` 的 `SELECTOR_VERSION` 升至 2；`FIELD_VERSION`/`SCHEMA_VERSION` 不变。
+- 新增 6 个测试（fields 4、capsule 1、真实 in-process codemode 1）；全套 **146 测试 / 1213 断言**通过；`bun run typecheck`、`bun run typecheck:tests` 通过。
+- 设计 §6.3/§6.4/§7.1/§10.1、CHANGELOG、README 已同批修订；progress §2.5 的旧 P0 口径已标注被取代。
+- S1 保持 W=2，CHANGELOG/README 已写“旧结论可能 index-only，用 list/search/read 恢复”，不在本批改候选集。
+- `dist/pi-context-index` 的 `0.1.0-test.2` 已构建：临时 agentDir `pi install` + 真实 `session.compact()` 生成 4,888 字符 capsule、provider 摘要调用 0；dist 产物的真实 in-process codemode 冒烟保存 2 段，primary/默认 `read` 均为 `/message/content/1/text`，显式 header `read` 通过。S0 修正**未提交**，当前已完成工作已提交为 `86dbbe2`。
+
+### 2.12 下一步（交付前剩余）
+
+1. **真实 TUI**：安装并实测 `dist/pi-context-index`（`0.1.0-test.2`），手动运行一次 `/compact`、一次 threshold/overflow 与一次 `context_index`，检查结果行可读性、通知和错误展示；只做必要可读性调整。
+2. **三个真实任务试用**：在用户环境压缩后继续工作，记录目标保持、找回归档与失败修复；重点复核 codemode 默认 `read` 是否返回正文，以及 W=2 下长结论是否需要 `list/search/read` 恢复；不得用合成曝光替代。
 3. **Ubuntu CI**：在干净 runner 跑 install/typecheck/test/pack；Windows 已通过，失败按平台修正，不跳过。
 4. **设置/压缩失败通知**：目前仍是静默 `{cancel:true}`；若补通知，必须保持 cancel 语义并捕获通知自身。
-5. **发布授权**：用户明确授权后才提交 P4/P5 变更、推送、打 tag 或 npm 发布；当前工作区仍有未提交改动。
+5. **发布授权**：P4/P5 与评审文档已提交 `86dbbe2`；S0 修正与 dist 测试包未提交。推送、打 tag、npm 发布仍需用户明确授权。
 
 > 2026-11-02 真实样本观察：先由外审判断 S0/S1 的修法与 0.1.0 阻塞级别，再继续真实 TUI/三任务；观察记录见 [观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)。
 
@@ -228,7 +262,8 @@ P4/P5 真实会话复核（2026-11-02）：
 | ~~P0 切点来自宿主~~ | **已处理（P1）**：`src/cut.ts` 取代宿主切点，`keepUserTurns` 与 `keep:N` 生效；真实宿主测试验证 `keep:2` 与 tail 边界 | 不再适用 |
 | ~~P0 续接包只引用用户原文~~ | **已处理（P2）**：U/W/N 候选、保底、真实分配与围栏修复全部落地；2,400/7,680/12,000 与围栏标记测试通过 | P4 的 12 题曝光已通过；三个真实任务试用仍待用户环境 |
 | 胶囊调参尚无大量真实语料 | 份额、保底、192 字符粒度与中段评分来自设计；12 题合成曝光通过，但尚未在真实任务上校准 | 已完成一次真实会话观察（[观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)）；三个真实任务试用后再调；调整时提升 `SELECTOR_VERSION` 并更新 golden，不建第二套选择器 |
-| codemode 多段结果默认字段取 header | 默认 `read` 与胶囊 `R` 行可能只拿到 header，正文/错误在 `content[1]`；真实样本已复算 | 已记录于[观察文档](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)；S0 低风险修复候选，待外审与授权；本次未改代码 |
+| ~~codemode 多段结果默认字段取 header~~ | **已处理（S0，2026-11-02）**：`primaryFieldPath` 对 codemode 多段结果取最后一个 text block；默认 read/胶囊 `R` 行回归测试通过；`SELECTOR_VERSION=2` | 只影响 codemode 多段结果，其他工具仍取第一段；见设计 §7.1 与 §2.11 |
+| 编辑后的 codemode 结果 / image 尾注 | replacement 不带原 `toolName`；最后 text block 可能是尾注或半段正文 | 本次不修，已在 CHANGELOG/README 记录；要覆盖需 owner-aware 解析，另立设计修订与测试 |
 | ~~P0 reader 读取整字段~~ | **已处理（P3）**：6,000/12,000/48,000 上限、`full`、游标、run budget、上下文余量与 `budget_exhausted` 均已落地；真实宿主 8 次调用上限通过 | 不再适用 |
 | 检索索引无长期缓存 | 每次词法搜索从快照重建字段/块/BM25；只保留最近一次边界的内存缓存 | **已测（P4）**：50MB 冷搜索 1.03–1.10s、热搜索 93–135ms；冷/热字节一致。暂无持久缓存必要；后续若加，必须保持排序与字节 |
 | 真实 TUI 与真实任务尚未验证 | 结果行可读性、通知、三个任务的目标保持尚未在真实环境检查 | 交付前手动执行；记录失败与修复，不以合成测试替代。12 题合成曝光已完成（§2.10） |
@@ -283,6 +318,8 @@ bun research/benchmark/benchmark.ts
 | 2026-11-02 | P4 codemode：新增 `tests/codemode.test.ts`，用真实 `createCodemodeExtension` 在 in-process 覆盖 8 条状态迁移；新增 `isSelfEchoToolField` 解决搜索命中自身 query 参数，设计 §6.5 同批修订。全套 140 测试 / 1183 断言通过 |
 | 2026-11-02 | P5 本地交付：重写 README/CHANGELOG，补设置示例与 codemode 注意事项；npm pack 19 文件、60.7kB；解包产物安装到临时 agentDir，真实 loader 注册工具，一次真实压缩（provider 摘要调用 0）与一次 context_index read 通过；更新 AGENTS/docs README 状态行。发布、提交与推送未执行 |
 | 2026-11-02 | 新增[真实会话两轮压缩观察](../reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md)：首次真实任务样本的聚合指标、S0 codemode 多段结果默认字段、S1 W 候选覆盖、S2 连续压缩/恢复成本、修复选项与外审提示词；外审可经授权只读访问真实会话。同步 docs/README 与本文状态/风险。仅文档，未改代码/设计 |
+| 2026-11-02 | 提交 P4/P5、测试、基准与观察/外审文档（`86dbbe2`，25 files）；当前工作树从该提交开始 S0 修正 |
+| 2026-11-02 | 外审裁定 S0 修、S1 延后（§2.11）。S0：`primaryFieldPath` 对 codemode 多段结果取最后一个 text block；`SELECTOR_VERSION` 2；新增 fields/capsule/真实 codemode 测试；设计 §6.3/§6.4/§7.1/§10.1 同批修订。全套 146 测试 / 1213 断言通过。S1 保持 W=2 并记入 CHANGELOG/README 已知限制。生成 `dist/pi-context-index` 0.1.0-test.2 测试包；临时 agentDir 安装 + 真实压缩 + dist codemode 默认字段冒烟通过；未提交 |
 
 ## 7. codemode 调用形态核实（2026-10-31 核实；2026-11-02 范围确认）
 
@@ -345,25 +382,27 @@ bun research/benchmark/benchmark.ts
 - [x] 已运行 P3 全套检查：`bun run typecheck`、`bun run typecheck:tests`、`bun test`（120 测试 / 885 断言）。
 - [x] 已读 P3 实现决定（本文 §2.9），再动手写 P4 生命周期测试。
 - [x] P4 threshold/overflow 已完成并记录于 §2.10；overflow 测试必须用大窗口 + reserveTokens:0，避免前置 threshold。
-- [x] P4 compact-all、restart/切树/fork/四种编辑、连续 10 次压缩、12 题曝光、10K/50MB 基准、codemode 8 条迁移已完成；证据见 §2.10，最新全套 140 测试 / 1183 断言。
-- [ ] 真实 TUI 与三个真实任务试用（需用户环境）。
-- [x] P5 本地打包与安装冒烟：README/CHANGELOG/设置示例、npm pack 19 文件、临时 agentDir 安装、真实压缩+读取。
-- [ ] 发布前授权：提交 P4/P5 变更、推送、打 tag 或 npm 发布均需用户明确授权。
+- [x] P4 compact-all、restart/切树/fork/四种编辑、连续 10 次压缩、12 题曝光、10K/50MB 基准、codemode 8 条迁移已完成；证据见 §2.10。P5 本地打包与安装冒烟通过（npm pack 19 文件、临时 agentDir 安装、真实压缩+读取）。
+- [x] P4/P5 与观察/外审文档已提交 `86dbbe2`。
+- [x] S0 修正已按外审窄规则落地：codemode 多段结果取最后一个 text block，`SELECTOR_VERSION=2`；新增 fields/capsule/真实 codemode 回归；全套 146 测试 / 1213 断言通过。
+- [x] `dist/pi-context-index` 生成 `0.1.0-test.2`；临时 agentDir 安装 + 真实压缩 + dist codemode 默认字段冒烟通过。
+- [ ] 真实 TUI 与三个真实任务试用（需用户环境，用 `0.1.0-test.2`）。
+- [ ] 发布前授权：S0 修正提交、推送、打 tag 或 npm 发布均需用户明确授权。
 
 ## 9. 下一窗口继续提示词（可直接粘贴）
 
 ```text
-继续 pi-context-index 0.1.0。仓库就是当前工作目录；先读 AGENTS.md、docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md（尤其 §2.10 P4/P5 完成记录、§2.11 交付前剩余、§4 风险），设计与计划是冻结输入，只有有意修订才同批更新并记录原因。不要提交、推送、打 tag 或发布，除非我明确授权。
+继续 pi-context-index 0.1.0。仓库就是当前工作目录；先读 AGENTS.md、docs/plans/PI_CONTEXT_INDEX_V0_1_PROGRESS.md（尤其 §2.10 P4/P5 完成记录、§2.11 外审结论与 S0 修正、§2.12 交付前剩余、§4 风险），设计与计划是冻结输入，只有有意修订才同批更新并记录原因。不要提交、推送、打 tag 或发布，除非我明确授权。
 
-当前状态：P0–P5 源码、自动验收与本地打包完成。bun run typecheck、bun run typecheck:tests、bun test 全绿（140 测试 / 1183 断言）；10K/50MB 基准冷 capsule 322–358ms、冷搜索 1.03–1.10s、热搜索 93–135ms、热 read 10–14ms；npm pack 19 文件，临时 agentDir 安装后真实压缩+读取通过。真实 TUI 与三个真实任务试用待用户环境。P4/P5 改动尚未提交；此前 P0–P3 已分三批提交（设计修订、实现+测试、进度）。
+当前状态：P0–P5 源码、自动验收与本地打包完成；P4/P5 与观察/外审文档已提交 `86dbbe2`。外审裁定 S0 修、S1 延后；S0 已修正（codemode 多段结果取最后一个 text block，`SELECTOR_VERSION=2`），全套 146 测试 / 1213 断言通过；`dist/pi-context-index` 已生成 `0.1.0-test.2` 测试包。10K/50MB 基准冷 capsule 322–358ms、冷搜索 1.03–1.10s、热搜索 93–135ms、热 read 10–14ms。真实 TUI 与三个真实任务试用待用户环境；S0 修正与测试包尚未提交。
 
 交付前按顺序：
-0. 先读 docs/reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md（2026-11-02 真实样本观察）；S0/S1 的修法待外审，未获结论前不要改选择器或设计。
-1. 真实 TUI：自动/手动压缩一次，工具 list/search/read 各一次，检查结果行可读性、通知和错误展示；只做必要可读性调整，记录实际输出边界。
-2. 三个真实任务形态：压缩后继续工作，记录目标保持、找回归档与失败修复；不得用合成 12 题替代，12 题已通过（capsule 4 / search 8，真实跨度断言）。
+0. 先读 docs/reviews/PI_CONTEXT_INDEX_REAL_COMPACTION_OBSERVATION.md 与 PI_CONTEXT_INDEX_REAL_COMPACTION_EXTERNAL_REVIEW.md；外审结论已落盘 §2.11：S0 修、S1 延后。不要凭单个样本改 W，也不要退回“最长 text block”方案。
+1. 真实 TUI：安装 dist/pi-context-index（0.1.0-test.2），自动/手动压缩一次，工具 list/search/read 各一次，检查结果行可读性、通知和错误展示；只做必要可读性调整，记录实际输出边界。
+2. 三个真实任务形态：压缩后继续工作，记录目标保持、找回归档与失败修复；重点复核 codemode 默认 read 是否返回正文、W=2 下长结论是否需要 reader 恢复；不得用合成 12 题替代，12 题已通过（capsule 4 / search 8，真实跨度断言）。
 3. 干净 Ubuntu runner 跑 bun install --frozen-lockfile --ignore-scripts、typecheck、typecheck:tests、bun test、npm pack --dry-run；Windows 已通过，失败按平台修正，不跳过。
 4. 可选：压缩/设置失败的非阻塞通知。必须保持 {cancel:true}，通知自身的异常要捕获。
-5. 只有在用户明确授权后：提交 P4/P5 改动、推送、打 tag、npm 发布；当前未发布。
+5. 只有在用户明确授权后：提交 S0 修正、推送、打 tag、npm 发布；P4/P5 已提交 86dbbe2，当前未发布。
 
 重要坑：
 - overflow 测试必须用大窗口 + Pi compaction.reserveTokens:0，只让显式 "prompt is too long" 错误触发 overflow；小窗口会先被 prompt 前置 threshold 抢走。
@@ -374,6 +413,7 @@ bun research/benchmark/benchmark.ts
 - compact-all 的空 firstKeptEntryId 已用真实宿主验证 append/projection/reopen/重复压缩/fork；不要改成宿主 retain-none 自身 ID。
 - Pi 1.4 的 appendContextEdit 拒绝 compaction target；检查点编辑只用临时文件合成记录覆盖投影，并在文档保持该限制。
 - codemode 嵌套调用的单条输出不入库；要保留就在脚本 return 或 text()。默认搜索跳过 context_index 自身参数（设计 §6.5）。
+- codemode 多段工具的默认字段取最后一个 text block（SELECTOR_VERSION=2）；编辑后的 replacement 不带 toolName，仍是已知边界；不要用“最长段”。
 - 每次有意义变更更新 PROGRESS；测试夹具只放合成数据，不写真实会话、真实文件名或绝对路径。不要用 Math.min(...array)/Math.max(...array) 处理候选列表。
 ```
 

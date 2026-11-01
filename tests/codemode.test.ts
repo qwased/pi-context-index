@@ -27,7 +27,7 @@ import {
   extractObservations,
   observationResultField,
 } from "../src/observations";
-import { fieldList } from "../src/fields";
+import { fieldList, primaryFieldOf } from "../src/fields";
 import {
   executeReader,
   readStoredField,
@@ -495,5 +495,39 @@ describe("P4 codemode state transitions on the real in-process pipeline", () => 
       "/message/details/fullOutputPath",
     );
     expect(detailsRead.ok).toBe(true);
+  });
+
+  test("a real two-part codemode result defaults to the output body", async () => {
+    const harness = await createCodemodeHarness();
+    const result = await runCodemode(
+      harness,
+      'return "REAL-CODEMODE-BODY-MARK";',
+    );
+    const content = result.message.content;
+    expect(content.length).toBeGreaterThanOrEqual(2);
+    const first = content[0];
+    expect(first?.type).toBe("text");
+    if (first?.type === "text") {
+      expect(first.text).toContain("Script completed");
+    }
+    expect(primaryFieldOf(result)?.path).toBe("/message/content/1/text");
+    expect(primaryFieldOf(result)?.text).toContain("REAL-CODEMODE-BODY-MARK");
+
+    const body = readStoredField(
+      harness.manager.getEntries(),
+      "e:" + result.id,
+    );
+    expect(body.ok).toBe(true);
+    if (body.ok) {
+      expect(body.field.path).toBe("/message/content/1/text");
+      expect(body.field.text).toContain("REAL-CODEMODE-BODY-MARK");
+    }
+    const header = readStoredField(
+      harness.manager.getEntries(),
+      "e:" + result.id,
+      "/message/content/0/text",
+    );
+    expect(header.ok).toBe(true);
+    if (header.ok) expect(header.field.text).toContain("Script completed");
   });
 });

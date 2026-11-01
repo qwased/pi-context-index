@@ -90,6 +90,8 @@ export interface ToolResultInput {
   toolCallId?: string;
   toolName?: string;
   text?: string;
+  /** Multi-part content, for shape-sensitive selectors and capsule excerpts. */
+  content?: ContentParts;
   isError?: boolean;
   nestedCalls?: Record<string, unknown>;
   details?: Record<string, unknown>;
@@ -110,7 +112,7 @@ export const toolResultEntry = (
       role: "toolResult",
       toolCallId: input.toolCallId ?? "call-1",
       toolName: input.toolName ?? "bash",
-      content: [{ type: "text", text: input.text ?? "ok" }],
+      content: input.content ?? [{ type: "text", text: input.text ?? "ok" }],
       isError: input.isError ?? false,
       timestamp: input.timestamp ?? 0,
       ...(input.nestedCalls ? { nestedCalls: input.nestedCalls } : {}),
