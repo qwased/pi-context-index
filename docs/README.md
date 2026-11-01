@@ -19,6 +19,10 @@
 - [plans/PI_CONTEXT_INDEX_PROTOTYPE_DESIGN.md](plans/PI_CONTEXT_INDEX_PROTOTYPE_DESIGN.md) — 历史原型设计（1371 行）：`I/E/X` 目录、有限视图、reader、render-1 至 render-5 与合成实验。保留为证据和设计演进记录，不回改。
 - [plans/PI_CONTEXT_INDEX_PROTOTYPE_HANDOFF.md](plans/PI_CONTEXT_INDEX_PROTOTYPE_HANDOFF.md) — 原型交接：完成状态、实验读数、文件地图、送审状态和后续入口。
 
+## 已确认的范围结论
+
+- [reviews/PI_CONTEXT_INDEX_CODEMODE_INDEXABILITY_REVIEW.md](reviews/PI_CONTEXT_INDEX_CODEMODE_INDEXABILITY_REVIEW.md) — **已确认（2026-11-02）**：0.1.0 只需索引并寻回 codemode 脚本的聚合输出与嵌套调用元数据（R1–R3）；每条嵌套调用的独立输出（R4）不寻回，作为产品级已知限制写入胶囊与 README。附 Pi 1.4.0 已核实事实、能力矩阵、路径 A 的修订清单与测试行。
+
 ## 外部评审
 
 - [reviews/pi-context-index 原型设计：独立第一性原理外部评审报告.md](reviews/pi-context-index%20原型设计：独立第一性原理外部评审报告.md) — 独立外审：有条件可送实现、六问裁定、MF-1 至 MF-6 修改清单、被证伪的预注册预测与缺失证据清单。
@@ -64,6 +68,7 @@
 | V0_1_DESIGN | 定稿，0.1.0 开发依据 | 产品、数据、算法与验收 |
 | V0_1_IMPLEMENTATION_PLAN | 定稿，执行依据 | 阶段、产出、退出条件与夹具 |
 | V0_1_PROGRESS | 持续更新，交接依据 | 当前进度、验证、风险与下一步 |
+| CODEMODE_INDEXABILITY_REVIEW | 已确认范围（2026-11-02） | codemode 需求拆解、宿主事实、范围结论与落点 |
 | PROTOTYPE_DESIGN / HANDOFF | 冻结的历史依据 | 设计演进与一次性验证读数 |
 | 外审报告 | 冻结的历史依据 | MF 清单、证据分级与已知缺口 |
 | PRIOR_ART_SURVEY | 调研快照，随生态变化 | 同类项目、对照维度与定位建议 |
