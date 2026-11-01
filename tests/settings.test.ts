@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_SETTINGS,
   SETTINGS_FILE_NAME,
@@ -108,6 +108,76 @@ describe("rejections", () => {
         "keepUserTurns",
         "runReadMaxChars",
       ]);
+    }
+  });
+});
+
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadSettingsFile } from "../src/host";
+
+const settingsRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of settingsRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const settingsDir = (): string => {
+  const root = mkdtempSync(join(tmpdir(), "pi-context-index-settings-"));
+  settingsRoots.push(root);
+  return root;
+};
+
+describe("settings file loading", () => {
+  test("missing file yields the defaults", () => {
+    const dir = settingsDir();
+    expect(loadSettingsFile(dir)).toEqual({
+      ok: true,
+      settings: {
+        viewMaxChars: 12_000,
+        keepUserTurns: 1,
+        runReadMaxChars: 48_000,
+      },
+    });
+  });
+
+  test("a valid file overrides the defaults, BOM tolerated", () => {
+    const dir = settingsDir();
+    writeFileSync(
+      join(dir, SETTINGS_FILE_NAME),
+      "\ufeff" + JSON.stringify({ viewMaxChars: 2_400, runReadMaxChars: 12_000 }),
+      "utf8",
+    );
+    const loaded = loadSettingsFile(dir);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(loaded.settings.viewMaxChars).toBe(2_400);
+      expect(loaded.settings.keepUserTurns).toBe(1);
+      expect(loaded.settings.runReadMaxChars).toBe(12_000);
+    }
+  });
+
+  test("invalid JSON and out-of-range values fail at load", () => {
+    const badJson = settingsDir();
+    writeFileSync(join(badJson, SETTINGS_FILE_NAME), "{ nope", "utf8");
+    const parsed = loadSettingsFile(badJson);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.message).toContain("not valid JSON");
+
+    const badRange = settingsDir();
+    writeFileSync(
+      join(badRange, SETTINGS_FILE_NAME),
+      JSON.stringify({ viewMaxChars: 10, keepUserTurns: 99 }),
+      "utf8",
+    );
+    const range = loadSettingsFile(badRange);
+    expect(range.ok).toBe(false);
+    if (!range.ok) {
+      expect(range.message).toContain("viewMaxChars");
+      expect(range.message).toContain("keepUserTurns");
     }
   });
 });

@@ -1,50 +1,43 @@
-/** P0 host adapter: one direct reader tool and the single compaction hook. */
+/** Host adapter: one direct reader tool and the single compaction hook.
+ *
+ * The hook captures an immutable source snapshot, chooses its own tail cut,
+ * projects the effective history and hands the rendered capsule to Pi. The
+ * tool exposes list/search/read behind one per-run budget. Any compaction
+ * failure is a hard cancel: returning nothing would let Pi call its model
+ * summarizer.
+ */
 
-import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
   SessionBeforeCompactEvent,
-  SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import type { CapsuleDetails } from "./model";
 import {
-  DETAILS_KIND,
-  FIELD_VERSION,
-  SCHEMA_VERSION,
-  SELECTOR_VERSION,
-  type CapsuleDetails,
-  type CapsuleRecipe,
-  type Span,
-} from "./model";
-import { DEFAULT_SETTINGS } from "./settings";
+  DEFAULT_SETTINGS,
+  SETTINGS_FILE_NAME,
+  parseSettings,
+  type ContextIndexSettings,
+} from "./settings";
+import { captureSource, projectHistory } from "./source";
+import { chooseCut, parseCompactionInstructions } from "./cut";
+import { buildCapsule as renderCapsule } from "./render";
 import {
-  fitGraphemePrefix,
-  primaryTextField,
-  readStoredField,
+  executeReader,
+  type ReaderArgs,
+  type ReaderContext,
+  type ReaderToolResult,
 } from "./reader";
+import {
+  ReaderRunBudget,
+  RUN_READ_MAX_CALLS,
+} from "./budget";
 
-const CAPSULE_PLACEHOLDER = "000000000000";
-
-/** P0 capsule bytes are capped by viewMaxChars until the real budget lands. */
-const CAPSULE_LIMIT = DEFAULT_SETTINGS.viewMaxChars;
-
-const SNAPSHOT_VERSION = 1;
-
-interface ReadDetails {
-  action: "read";
-  ref: string;
-  ownerId?: string;
-  storageId?: string;
-  field?: string;
-  start?: number;
-  end?: number;
-  chars?: number;
-  complete?: boolean;
-  error?: string;
-}
-
-export interface ThinCapsule {
+export interface HookCapsule {
   summary: string;
   firstKeptEntryId: string;
   details: CapsuleDetails;
@@ -53,266 +46,201 @@ export interface ThinCapsule {
 export type CapsuleBuilder = (
   event: SessionBeforeCompactEvent,
   ctx: ExtensionContext,
-) => ThinCapsule;
+) => HookCapsule;
 
 export interface RegisterContextIndexOptions {
   /** Host-test seam for the mandatory cancel-on-failure transition. */
   buildCapsule?: CapsuleBuilder;
+  /** Directory holding pi-context-index.json; defaults to Pi's agent dir. */
+  agentDir?: string;
 }
 
-const isMessageRecord = (entry: SessionEntry): boolean =>
-  entry.type === "message" || entry.type === "custom_message";
+type SettingsLoad =
+  | { ok: true; settings: ContextIndexSettings }
+  | { ok: false; message: string };
 
-interface QuoteSource {
-  entry: SessionEntry;
-  field: string;
-  text: string;
-}
+const contextWindowOf = (ctx: ExtensionContext): number =>
+  ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 
-const collectSummarizedUsers = (
-  branch: readonly SessionEntry[],
-  cutIndex: number,
-): QuoteSource[] => {
-  const candidates: QuoteSource[] = [];
-  for (let index = 0; index < cutIndex; index++) {
-    const entry = branch[index];
-    if (!entry || entry.type !== "message" || entry.message.role !== "user") {
-      continue;
-    }
-    const primary = primaryTextField(entry);
-    if (!primary || primary.text.length === 0) continue;
-    candidates.push({
-      entry,
-      field: primary.path,
-      text: primary.text,
-    });
+const loadSettingsFrom = (agentDir: string): SettingsLoad => {
+  const file = join(agentDir, SETTINGS_FILE_NAME);
+  if (!existsSync(file)) {
+    return { ok: true, settings: { ...DEFAULT_SETTINGS } };
   }
-  if (candidates.length === 0) return [];
-  const first = candidates[0];
-  const recent = candidates.slice(-3);
-  if (candidates.length <= 4) return candidates;
-  return first ? [first, ...recent] : recent;
+  let raw: unknown;
+  try {
+    const text = readFileSync(file, "utf8");
+    raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        SETTINGS_FILE_NAME +
+        " is not valid JSON: " +
+        (error instanceof Error ? error.message : String(error)),
+    };
+  }
+  const parsed = parseSettings(raw);
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      message:
+        SETTINGS_FILE_NAME +
+        ": " +
+        parsed.errors.map((entry) => entry.field + " " + entry.message).join("; "),
+    };
+  }
+  return { ok: true, settings: parsed.settings };
 };
 
-const canonicalSnapshotId = (input: {
-  sessionId: string;
-  headId: string | null;
-  watermarkId: string | null;
-  recipe: CapsuleRecipe;
-  shown: Span[];
-}): string => {
-  const canonical = JSON.stringify({
-    version: SNAPSHOT_VERSION,
-    sessionId: input.sessionId,
-    headId: input.headId,
-    watermarkId: input.watermarkId,
-    recipe: input.recipe,
-    shown: input.shown.map((span) => [
-      span.ownerId,
-      span.storageId,
-      span.field,
-      span.start,
-      span.end,
-    ]),
-  });
-  return createHash("sha256").update(canonical, "utf8").digest("hex").slice(0, 12);
-};
+export const loadSettingsFile = (agentDir: string): SettingsLoad =>
+  loadSettingsFrom(agentDir);
 
-/** Bounded P0 capsule: header plus exact user quotes with `e:<entryId>` refs. */
-export const buildThinCapsule: CapsuleBuilder = (event, ctx) => {
-  const branch = event.branchEntries;
-  const firstKeptEntryId = event.preparation.firstKeptEntryId;
-  const cutIndex = branch.findIndex((entry) => entry.id === firstKeptEntryId);
-  if (cutIndex < 0) {
-    throw new Error(
-      `firstKeptEntryId ${firstKeptEntryId} is not on the current branch`,
-    );
-  }
-
-  const messageEntries = branch.filter(isMessageRecord);
-  const firstSavedId = messageEntries[0]?.id ?? branch[0]?.id ?? "?";
-  const lastSavedId = messageEntries.at(-1)?.id ?? branch.at(-1)?.id ?? "?";
-  const sessionId = ctx.sessionManager.getSessionId();
-  const headId = ctx.sessionManager.getLeafId() ?? branch.at(-1)?.id ?? null;
-  const watermarkId = branch.at(-1)?.id ?? null;
-  const contextWindow =
-    ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-
-  const recipe: CapsuleRecipe = {
-    selectorVersion: SELECTOR_VERSION,
-    fieldVersion: FIELD_VERSION,
-    budgetChars: CAPSULE_LIMIT,
+/** Default capsule builder: capture, cut, project, select, render. */
+export const buildHookCapsule = (
+  event: SessionBeforeCompactEvent,
+  ctx: ExtensionContext,
+  settings: ContextIndexSettings = DEFAULT_SETTINGS,
+): HookCapsule => {
+  const snapshot = captureSource(ctx.sessionManager, event.branchEntries);
+  const parsed = parseCompactionInstructions(event.customInstructions);
+  const keep = parsed.keep ?? settings.keepUserTurns;
+  const contextWindow = contextWindowOf(ctx);
+  const cutResult = chooseCut({
+    snapshot,
+    keepUserTurns: keep,
+    reason: event.reason,
     contextWindow,
-    keep: DEFAULT_SETTINGS.keepUserTurns,
-  };
-
-  const header = (snapshotId: string): string =>
-    [
-      `[Context index v1 | snapshot=${snapshotId}]`,
-      `Saved records: ${messageEntries.length} (e:${firstSavedId}..e:${lastSavedId}); live tail starts at e:${firstKeptEntryId}.`,
-      `Exact stored text. To read an omitted original: context_index {"action":"read","ref":"e:<id>","field":"<field>"}.`,
-    ].join("\n");
-
-  const measuredHeader = header(CAPSULE_PLACEHOLDER);
-  const selected = collectSummarizedUsers(branch, cutIndex);
-
-  // Fixed per-quote allowance covers the label, an optional omission marker and
-  // the separators; the final length check below is authoritative.
-  const PER_QUOTE_OVERHEAD = 320;
-  const SEPARATOR_OVERHEAD = 8;
-  let textBudget =
-    CAPSULE_LIMIT -
-    measuredHeader.length -
-    selected.length * PER_QUOTE_OVERHEAD -
-    SEPARATOR_OVERHEAD;
-
-  const blocks: string[] = [];
-  const shown: Span[] = [];
-  for (let index = 0; index < selected.length; index++) {
-    const quote = selected[index];
-    if (!quote) continue;
-    const share = Math.floor(textBudget / (selected.length - index));
-    if (share <= 0) break;
-    const end = fitGraphemePrefix(quote.text, share);
-    const partial = end < quote.text.length;
-    const label = `U e:${quote.entry.id} | field=${quote.field} | ${
-      partial ? `partial 0-${end}/${quote.text.length}` : "full"
-    }`;
-    const marker = partial
-      ? `[e:${quote.entry.id}: ${end}-${quote.text.length} chars omitted; read field ${quote.field} with context_index.]`
-      : "";
-    blocks.push(
-      [label, quote.text.slice(0, end), ...(marker ? [marker] : [])].join(
-        "\n",
-      ),
-    );
-    shown.push({
-      ownerId: quote.entry.id,
-      storageId: quote.entry.id,
-      field: quote.field,
-      start: 0,
-      end,
-    });
-    textBudget -= end;
-  }
-
-  if (selected.length > 0 && blocks.length === 0) {
-    const refs = selected
-      .map((quote) => `e:${quote.entry.id} (${quote.field})`)
-      .join(", ");
-    blocks.push(`No room to quote stored text; read ${refs} with context_index.`);
-  }
-
-  const snapshotId = canonicalSnapshotId({
-    sessionId,
-    headId,
-    watermarkId,
-    recipe,
-    shown,
   });
-  const finalHeader = header(snapshotId);
-  const summary = [finalHeader, ...blocks].join("\n\n");
-
-  if (summary.length > CAPSULE_LIMIT) {
-    throw new Error(
-      `capsule length ${summary.length} exceeds ${CAPSULE_LIMIT}`,
-    );
+  if (!cutResult.ok) {
+    throw new Error("Nothing to compact: " + cutResult.reason);
   }
-
-  const quoted = new Set(shown.map((span) => span.ownerId)).size;
-  const saved = messageEntries.length;
-  const live = branch
-    .slice(cutIndex)
-    .filter(isMessageRecord).length;
-
-  const details: CapsuleDetails = {
-    kind: DETAILS_KIND,
-    schemaVersion: SCHEMA_VERSION,
-    sourceSessionId: sessionId,
-    sourceHeadId: headId,
-    sourceWatermarkId: watermarkId,
-    firstKeptEntryId,
-    snapshotId,
-    recipe,
-    shown,
-    observations: [],
-    counts: {
-      saved,
-      effective: saved,
-      live,
-      quoted,
-      indexOnly: Math.max(0, saved - live - quoted),
-      outside: 0,
+  const history = projectHistory(snapshot, cutResult.cut);
+  const capsule = renderCapsule({
+    history,
+    config: {
+      viewMaxChars: settings.viewMaxChars,
+      keepUserTurns: settings.keepUserTurns,
     },
-    usedChars: summary.length,
+    contextWindow,
+    instructions: parsed.instructions,
+  });
+  return {
+    summary: capsule.text,
+    firstKeptEntryId: cutResult.cut.firstKeptEntryId,
+    details: capsule.details,
   };
-
-  return { summary, firstKeptEntryId, details };
 };
+
+const readerParameters = Type.Object(
+  {
+    action: Type.Union([
+      Type.Literal("list"),
+      Type.Literal("search"),
+      Type.Literal("read"),
+    ]),
+    ref: Type.Optional(
+      Type.String({ description: "Native record reference: e:<entryId>." }),
+    ),
+    field: Type.Optional(
+      Type.String({ description: "JSON Pointer of one stored field." }),
+    ),
+    role: Type.Optional(
+      Type.String({
+        description: "Optional role filter: user, assistant, toolResult, custom, edit.",
+      }),
+    ),
+    query: Type.Optional(Type.String({ description: "Search terms or literal." })),
+    match: Type.Optional(
+      Type.Union([Type.Literal("terms"), Type.Literal("literal")]),
+    ),
+    scope: Type.Optional(
+      Type.Union([Type.Literal("branch"), Type.Literal("session")]),
+    ),
+    cursor: Type.Optional(Type.String({ description: "Cursor from a previous result." })),
+    offset: Type.Optional(
+      Type.Integer({ minimum: 0, description: "Start offset in UTF-16 units." }),
+    ),
+    length: Type.Optional(
+      Type.Integer({ minimum: 1, description: "Requested chars; capped at 12,000." }),
+    ),
+    full: Type.Optional(
+      Type.Boolean({ description: "Read the whole stored field." }),
+    ),
+  },
+  { additionalProperties: false },
+);
 
 export const registerContextIndex = (
   pi: ExtensionAPI,
   options: RegisterContextIndexOptions = {},
 ): void => {
-  const buildCapsule = options.buildCapsule ?? buildThinCapsule;
+  const agentDir = options.agentDir ?? getAgentDir();
+  const readSettings = (): SettingsLoad => loadSettingsFrom(agentDir);
+  let runBudget: ReaderRunBudget | null = null;
+
+  const budgetFor = (settings: ContextIndexSettings): ReaderRunBudget => {
+    if (!runBudget) {
+      runBudget = new ReaderRunBudget(settings.runReadMaxChars, RUN_READ_MAX_CALLS);
+    }
+    return runBudget;
+  };
+
+  const injectedBuilder = options.buildCapsule;
+  const buildCapsule =
+    injectedBuilder ??
+    ((event: SessionBeforeCompactEvent, ctx: ExtensionContext) => {
+      const loaded = readSettings();
+      if (!loaded.ok) throw new Error(loaded.message);
+      return buildHookCapsule(event, ctx, loaded.settings);
+    });
+
+  pi.on("session_start", () => {
+    runBudget = null;
+  });
+
+  pi.on("before_agent_start", () => {
+    const loaded = readSettings();
+    runBudget = new ReaderRunBudget(
+      loaded.ok ? loaded.settings.runReadMaxChars : DEFAULT_SETTINGS.runReadMaxChars,
+      RUN_READ_MAX_CALLS,
+    );
+  });
 
   pi.registerTool({
     name: "context_index",
     label: "Context Index",
     description:
-      "Read one saved session record by its native e:<entryId> reference. The continuation summary names the stored field to read. Returns the exact stored text.",
+      "Inspect the saved session: list records or one record's fields and headings, search saved text (BM25 terms or literal), and read exact stored fields with bounded windows or full:true. The continuation summary points at stored addresses.",
     promptGuidelines: [
-      "When an omitted user instruction matters, use context_index read with the field shown in the summary. Reuse source text already in context.",
+      "Use the latest user instructions with the live tail. The context index quotes saved history. When an omitted instruction matters, use context_index: list to browse, search to locate, read to inspect. Use full:true when the complete instruction is needed. A partial result includes the next read. Reuse source text already in context.",
     ],
     exposure: "direct",
-    parameters: Type.Object(
-      {
-        action: Type.Literal("read"),
-        ref: Type.String({
-          description: "Native record reference: e:<entryId>.",
-        }),
-        field: Type.Optional(
-          Type.String({
-            description:
-              "JSON Pointer of a stored text field; defaults to the record's primary text field.",
-          }),
-        ),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: readerParameters,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
-      const result = readStoredField(
-        ctx.sessionManager.getEntries(),
-        params.ref,
-        params.field,
-      );
-      if (!result.ok) {
+      const loaded = readSettings();
+      if (!loaded.ok) {
+        const details = { action: params.action, error: loaded.message };
         return {
-          content: [{ type: "text", text: result.detail }],
-          details: {
-            action: "read",
-            ref: params.ref,
-            error: result.reason,
-          } satisfies ReadDetails,
+          content: [
+            {
+              type: "text",
+              text: "[context_index settings error] " + loaded.message,
+            },
+          ],
+          details,
           isError: true,
         };
       }
-      const field = result.field;
-      return {
-        content: [{ type: "text", text: field.text }],
-        details: {
-          action: "read",
-          ref: params.ref,
-          ownerId: field.ownerId,
-          storageId: field.storageId,
-          field: field.path,
-          start: 0,
-          end: field.text.length,
-          chars: field.text.length,
-          complete: true,
-        } satisfies ReadDetails,
-      };
+      const budget = budgetFor(loaded.settings);
+      const result: ReaderToolResult = await executeReader(
+        params as unknown as ReaderArgs,
+        ctx as unknown as ReaderContext,
+        budget,
+        signal,
+      );
+      return result;
     },
   });
 

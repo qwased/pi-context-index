@@ -63,7 +63,15 @@ export interface Observation {
   operation?: ObservationOperation;
   path?: string;
   command?: string;
+  /**
+   * Entry that carries the result. For a nested call this is the parent result
+   * entry; the pairing key is (resultId, nestedIndex).
+   */
   resultId?: EntryRef;
+  /** 0-based index in resultId's saved message.nestedCalls.calls, when nested. */
+  nestedIndex?: number;
+  /** UTF-8 size Pi recorded instead of the nested arguments, when dropped. */
+  argumentsBytes?: number;
   isError?: boolean;
   sources: Span[];
   valueSpan?: Span;
@@ -80,6 +88,8 @@ export interface CapsuleRecipe {
 export interface CapsuleObservationRef {
   callId: string;
   resultId?: EntryRef;
+  /** Present only for a nested call under the parent result entry. */
+  nestedIndex?: number;
 }
 
 export interface CapsuleCounts {

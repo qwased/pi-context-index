@@ -23,6 +23,7 @@ import { registerContextIndex } from "../src/host";
 import type { CapsuleDetails } from "../src/model";
 import { readStoredField } from "../src/reader";
 import { DEFAULT_SETTINGS } from "../src/settings";
+import { capsuleCap } from "../src/budget";
 
 const EXTENSION_ENTRY = fileURLToPath(new URL("../index.ts", import.meta.url));
 
@@ -50,10 +51,16 @@ interface RecordedRequest {
 }
 
 const roots: string[] = [];
+const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
 
 afterEach(() => {
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
+  }
+  if (ORIGINAL_AGENT_DIR === undefined) {
+    delete process.env.PI_CODING_AGENT_DIR;
+  } else {
+    process.env.PI_CODING_AGENT_DIR = ORIGINAL_AGENT_DIR;
   }
 });
 
@@ -66,6 +73,8 @@ const createRoot = (): TestRoot => {
   mkdirSync(cwd, { recursive: true });
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(sessionsDir, { recursive: true });
+  // The extension resolves pi-context-index.json through Pi's agent dir.
+  process.env.PI_CODING_AGENT_DIR = agentDir;
   // Keep the host's own cut small so a compact fixture can summarize a prefix.
   writeFileSync(
     join(agentDir, "settings.json"),
@@ -75,8 +84,20 @@ const createRoot = (): TestRoot => {
   return { root, cwd, agentDir, sessionsDir };
 };
 
-const createProvider = async (agentDir: string): Promise<ProviderHarness> => {
-  const faux = fauxProvider({ tokenSize: { min: 100, max: 200 } });
+const createProvider = async (
+  agentDir: string,
+  options: { contextWindow?: number; maxTokens?: number } = {},
+): Promise<ProviderHarness> => {
+  const faux = fauxProvider({
+    tokenSize: { min: 100, max: 200 },
+    models: [
+      {
+        id: "faux-1",
+        contextWindow: options.contextWindow ?? 128_000,
+        maxTokens: options.maxTokens ?? 16_384,
+      },
+    ],
+  });
   const runtime = await ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
     modelsPath: null,
@@ -274,16 +295,15 @@ describe("P0 real-host closure", () => {
     expect(compaction.fromHook).toBe(true);
     expect(compaction.summary).toBe(result.summary);
     expect(compaction.firstKeptEntryId).toBe(result.firstKeptEntryId);
-    expect(result.summary.length).toBeLessThanOrEqual(
-      DEFAULT_SETTINGS.viewMaxChars,
-    );
+    const expectedCap = capsuleCap(DEFAULT_SETTINGS.viewMaxChars, 128_000);
+    expect(result.summary.length).toBeLessThanOrEqual(expectedCap);
 
     const details = compaction.details as CapsuleDetails;
     expect(details.kind).toBe("pi-context-index");
     expect(details.schemaVersion).toBe(1);
     expect(details.snapshotId).toMatch(/^[0-9a-f]{12}$/);
     expect(result.summary).toContain(`snapshot=${details.snapshotId}`);
-    expect(details.recipe.budgetChars).toBe(DEFAULT_SETTINGS.viewMaxChars);
+    expect(details.recipe.budgetChars).toBe(expectedCap);
     expect(details.usedChars).toBe(result.summary.length);
     expect(details.firstKeptEntryId).toBe(result.firstKeptEntryId);
     expect(details.shown.length).toBeGreaterThan(0);
@@ -345,24 +365,21 @@ describe("P0 real-host closure", () => {
       expectedTail,
     );
 
-    // Extract the generated reference for the first user record and execute
-    // the reader through a real agent turn in the reopened session.
-    const quotes = [...result.summary.matchAll(/^U (e:[0-9a-f-]+) \| field=(\S+)/gm)]
-      .map((match) => ({ ref: match[1], field: match[2] }))
-      .filter(
-        (quote): quote is { ref: string; field: string } =>
-          quote.ref !== undefined && quote.field !== undefined,
-      );
-    expect(quotes.length).toBeGreaterThan(0);
+    // Derive the generated reference for the first user record from the
+    // structured shown spans, then execute the reader through a real agent turn.
     expect(result.summary).toContain(TARGET_USER_TEXT);
     const targetEntry = findUserTarget(reopened.getEntries());
     expect(targetEntry?.id).toBe(userIds[0] ?? "");
     if (!targetEntry) throw new Error("target user record is missing");
-    const targetQuote = quotes.find(
-      (quote) => quote.ref === `e:${targetEntry.id}`,
+    const targetSpan = details.shown.find(
+      (span) => span.ownerId === targetEntry.id,
     );
-    expect(targetQuote).toBeDefined();
-    if (!targetQuote) throw new Error("generated capsule has no target ref");
+    expect(targetSpan).toBeDefined();
+    if (!targetSpan) throw new Error("generated capsule has no target ref");
+    const targetQuote = {
+      ref: `e:${targetSpan.storageId}`,
+      field: targetSpan.field,
+    };
 
     const secondProvider = await createProvider(testRoot.agentDir);
     const secondSettings = SettingsManager.create(
@@ -425,7 +442,15 @@ describe("P0 real-host closure", () => {
     }
     expect(toolResult.message.toolName).toBe("context_index");
     expect(toolResult.message.isError).toBe(false);
-    expect(messageText(toolResult.message)).toBe(TARGET_USER_TEXT);
+    const resultText = messageText(toolResult.message);
+    expect(resultText).toContain(TARGET_USER_TEXT);
+    expect(resultText).toContain("field=/message/content");
+    expect(toolResult.message.details).toMatchObject({
+      action: "read",
+      storageId: targetEntry.id,
+      field: "/message/content",
+      complete: true,
+    });
     expect(JSON.stringify(toolResult.message.details)).not.toContain(
       "保留原始验收夹具",
     );
@@ -460,9 +485,8 @@ describe("P0 real-host closure", () => {
 
     const result = await session.compact();
     expect(provider.faux.state.callCount).toBe(0);
-    expect(result.summary.length).toBeLessThanOrEqual(
-      DEFAULT_SETTINGS.viewMaxChars,
-    );
+    const cap = capsuleCap(DEFAULT_SETTINGS.viewMaxChars, 128_000);
+    expect(result.summary.length).toBeLessThanOrEqual(cap);
 
     const compaction = manager.getEntries().at(-1);
     if (compaction?.type !== "compaction") {
@@ -471,29 +495,37 @@ describe("P0 real-host closure", () => {
     const details = compaction.details as CapsuleDetails;
     const targetId = userIds[0];
     if (!targetId) throw new Error("missing first user record");
-    const span = details.shown.find((candidate) => candidate.ownerId === targetId);
-    expect(span).toBeDefined();
-    if (!span) throw new Error("the long user record was not quoted");
+    const spans = details.shown.filter((candidate) => candidate.ownerId === targetId);
+    expect(spans.length).toBeGreaterThan(0);
+    if (spans.length === 0) throw new Error("the long user record was not quoted");
 
-    expect(span.field).toBe("/message/content");
-    expect(span.end).toBeGreaterThan(0);
-    expect(span.end).toBeLessThan(HUGE_USER_TEXT.length);
-    expect(result.summary).toContain(HUGE_USER_TEXT.slice(0, span.end));
-    expect(result.summary).toMatch(
-      new RegExp(
-        `^U e:${targetId} \\| field=/message/content \\| partial 0-${span.end}/${HUGE_USER_TEXT.length}$`,
-        "m",
-      ),
+    const shownChars = spans.reduce(
+      (sum, span) => sum + (span.end - span.start),
+      0,
     );
-    expect(result.summary).toContain("chars omitted");
-    // A UTF-16 high surrogate at the cut would mean a split grapheme.
-    const lastUnit = HUGE_USER_TEXT.charCodeAt(span.end - 1);
-    expect(lastUnit >= 0xd800 && lastUnit <= 0xdbff).toBe(false);
+    expect(shownChars).toBeGreaterThan(0);
+    expect(shownChars).toBeLessThan(HUGE_USER_TEXT.length);
+    expect(result.summary).toContain(
+      `U e:${targetId} | partial ${shownChars}/${HUGE_USER_TEXT.length} | field=/message/content`,
+    );
+    expect(result.summary).toContain(
+      HUGE_USER_TEXT.slice(spans[0]!.start, spans[0]!.end),
+    );
+    expect(result.summary).toContain("[省略 ");
+    // Every shown boundary is a grapheme boundary, never a split surrogate.
+    for (const span of spans) {
+      const lastUnit = HUGE_USER_TEXT.charCodeAt(span.end - 1);
+      expect(lastUnit >= 0xd800 && lastUnit <= 0xdbff).toBe(false);
+      if (span.start > 0) {
+        const firstUnit = HUGE_USER_TEXT.charCodeAt(span.start);
+        expect(firstUnit >= 0xdc00 && firstUnit <= 0xdfff).toBe(false);
+      }
+    }
 
     const stored = readStoredField(
       manager.getEntries(),
       `e:${targetId}`,
-      span.field,
+      spans[0]!.field,
     );
     expect(stored.ok).toBe(true);
     if (stored.ok) {
@@ -563,5 +595,499 @@ describe("P0 real-host closure", () => {
     expect(
       manager.getEntries().some((entry) => entry.type === "compaction"),
     ).toBe(false);
+  });
+});
+
+describe("P1 effective history on the real host", () => {
+  test("keep:N controls the tail and edited text is quoted from its storage entry", async () => {
+    const testRoot = createRoot();
+    const editedText = "EDITED: quoted text now comes from the edit entry.";
+    const originalText =
+      "Second instruction: quote stored text, never a model summary.";
+    const provider = await createProvider(testRoot.agentDir);
+    const settingsManager = SettingsManager.create(
+      testRoot.cwd,
+      testRoot.agentDir,
+    );
+    const loader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager,
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const manager = SessionManager.create(testRoot.cwd, testRoot.sessionsDir);
+    const userIds = appendHistory(manager);
+    const editedUser = userIds[1];
+    const keptUser = userIds[3];
+    const firstUser = userIds[0];
+    if (!editedUser || !keptUser || !firstUser) {
+      throw new Error("fixture users missing");
+    }
+    const editId = manager.appendContextEdit(editedUser, {
+      content: editedText,
+    });
+    const session = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager,
+      settingsManager,
+      loader,
+      provider,
+    });
+
+    // Before compaction the host projects the edit into model context.
+    const preProjection = manager.buildSessionProjection();
+    const projectedUsers = preProjection.messages.filter(
+      (message) => message.role === "user",
+    );
+    expect(projectedUsers.map((message) => message.content)).toContain(editedText);
+    expect(projectedUsers.map((message) => message.content)).not.toContain(
+      originalText,
+    );
+
+    const result = await session.compact("keep:2 focus on the edit");
+    expect(provider.faux.state.callCount).toBe(0);
+    // keep:2 retains the last two user turns, so the cut is the fourth user.
+    expect(result.firstKeptEntryId).toBe(keptUser);
+
+    const compaction = manager.getEntries().find((entry) => entry.type === "compaction");
+    if (compaction?.type !== "compaction") {
+      throw new Error("expected a persisted compaction entry");
+    }
+    const details = compaction.details as CapsuleDetails;
+    expect(details.recipe.keep).toBe(2);
+    expect(details.firstKeptEntryId).toBe(keptUser);
+    expect(result.summary).toContain(editedText);
+    expect(result.summary).not.toContain(originalText);
+
+    const span = details.shown.find((candidate) => candidate.ownerId === editedUser);
+    expect(span).toEqual({
+      ownerId: editedUser,
+      storageId: editId,
+      field: "/replacement/content",
+      start: 0,
+      end: editedText.length,
+    });
+
+    // Explicit reads of the original entry and of the edit entry stay distinct.
+    const original = readStoredField(manager.getEntries(), `e:${editedUser}`);
+    expect(original.ok && original.field.text).toBe(originalText);
+    const first = readStoredField(manager.getEntries(), `e:${firstUser}`);
+    expect(first.ok && first.field.text).toBe(TARGET_USER_TEXT);
+
+    // A real agent turn reads the edit storage address through the tool.
+    const sessionFile = manager.getSessionFile();
+    if (!sessionFile) throw new Error("session file was not persisted");
+    const reopened = SessionManager.open(sessionFile);
+    const secondProvider = await createProvider(testRoot.agentDir);
+    const secondSettings = SettingsManager.create(testRoot.cwd, testRoot.agentDir);
+    const secondLoader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager: secondSettings,
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const secondSession = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager: reopened,
+      settingsManager: secondSettings,
+      loader: secondLoader,
+      provider: secondProvider,
+    });
+    secondProvider.faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("context_index", {
+          action: "read",
+          ref: `e:${editId}`,
+          field: "/replacement/content",
+        }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("read complete"),
+    ]);
+    await secondSession.prompt("Read the edited instruction from its stored field.");
+    const toolResult = findLatestToolResult(reopened.getEntries());
+    if (
+      toolResult?.type !== "message" ||
+      toolResult.message.role !== "toolResult"
+    ) {
+      throw new Error("context_index did not produce a tool result");
+    }
+    expect(toolResult.message.isError).toBe(false);
+    expect(messageText(toolResult.message)).toContain(editedText);
+    expect(toolResult.message.details).toMatchObject({
+      storageId: editId,
+      field: "/replacement/content",
+      effective: true,
+    });
+  });
+});
+
+describe("P2 repeated compaction", () => {
+  test("a second compaction rebuilds from source history instead of the previous summary", async () => {
+    const testRoot = createRoot();
+    const provider = await createProvider(testRoot.agentDir);
+    const settingsManager = SettingsManager.create(
+      testRoot.cwd,
+      testRoot.agentDir,
+    );
+    const loader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager,
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const manager = SessionManager.create(testRoot.cwd, testRoot.sessionsDir);
+    appendHistory(manager);
+    const session = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager,
+      settingsManager,
+      loader,
+      provider,
+    });
+
+    const first = await session.compact();
+    expect(provider.faux.state.callCount).toBe(0);
+
+    const postUserText = "POST-COMPACTION: continue with the implementation.";
+    // Enough post-checkpoint turns that the host's own preparation still has
+    // something to summarize; our cut then keeps the last user turn.
+    let postUser = "";
+    let postAssistant = "";
+    for (let step = 0; step < 6; step++) {
+      const timestamp = Date.now() + 100_000 + step * 10_000;
+      postUser = manager.appendMessage({
+        role: "user",
+        content: step === 5 ? postUserText : `Post-compaction step ${step}.`,
+        timestamp,
+      });
+      postAssistant = manager.appendMessage(
+        fauxAssistantMessage(LONG_ASSISTANT_TEXT, { timestamp: timestamp + 1 }),
+      );
+    }
+
+    const second = await session.compact("keep:1");
+    expect(provider.faux.state.callCount).toBe(0);
+    expect(second.firstKeptEntryId).toBe(postUser);
+    expect(second.summary).toContain(TARGET_USER_TEXT);
+    expect(second.summary).not.toContain(postUserText);
+
+    const entries = manager.getEntries();
+    const compactions = entries.filter((entry) => entry.type === "compaction");
+    expect(compactions).toHaveLength(2);
+    const latest = compactions[1];
+    if (latest?.type !== "compaction") {
+      throw new Error("expected the second compaction");
+    }
+    expect(latest.summary).toBe(second.summary);
+    expect(latest.firstKeptEntryId).toBe(postUser);
+    expect(latest.fromHook).toBe(true);
+    const details = latest.details as CapsuleDetails;
+    expect(details.sourceWatermarkId).toBe(postAssistant);
+    expect(details.counts.saved).toBeGreaterThan(
+      (compactions[0]?.type === "compaction"
+        ? (compactions[0].details as CapsuleDetails).counts.saved
+        : 0),
+    );
+    expect(details.counts.live).toBe(2);
+    expect(details.counts.live + details.counts.quoted + details.counts.indexOnly).toBe(
+      details.counts.effective,
+    );
+
+    // The first user record survives both checkpoints and still reads back.
+    const sessionFile = manager.getSessionFile();
+    if (!sessionFile) throw new Error("session file was not persisted");
+    const reopened = SessionManager.open(sessionFile);
+    const reopenedCompactions = reopened
+      .getEntries()
+      .filter((entry) => entry.type === "compaction");
+    expect(reopenedCompactions).toHaveLength(2);
+    const firstUser = findUserTarget(reopened.getEntries());
+    if (!firstUser) throw new Error("the first user record was lost");
+    const stored = readStoredField(
+      reopened.getEntries(),
+      `e:${firstUser.id}`,
+    );
+    expect(stored.ok && stored.field.text).toBe(TARGET_USER_TEXT);
+  });
+});
+
+describe("P3 reader on the real host", () => {
+  test("settings load and the ninth reader call in one run is budget_exhausted", async () => {
+    const testRoot = createRoot();
+    writeFileSync(
+      join(testRoot.agentDir, "pi-context-index.json"),
+      JSON.stringify({
+        viewMaxChars: 2_400,
+        keepUserTurns: 1,
+        runReadMaxChars: 48_000,
+      }),
+      "utf8",
+    );
+    const provider = await createProvider(testRoot.agentDir);
+    const settingsManager = SettingsManager.create(testRoot.cwd, testRoot.agentDir);
+    const loader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager,
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const manager = SessionManager.create(testRoot.cwd, testRoot.sessionsDir);
+    appendHistory(manager);
+    const session = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager,
+      settingsManager,
+      loader,
+      provider,
+    });
+
+    const compacted = await session.compact();
+    expect(compacted.summary.length).toBeLessThanOrEqual(2_400);
+    expect(provider.faux.state.callCount).toBe(0);
+
+    const responses = Array.from({ length: 9 }, () =>
+      fauxAssistantMessage(
+        fauxToolCall("context_index", { action: "list" }),
+        { stopReason: "toolUse" },
+      ),
+    );
+    responses.push(fauxAssistantMessage("read complete"));
+    provider.faux.setResponses(responses);
+    await session.prompt("Walk the archive with the reader.");
+    expect(provider.faux.state.callCount).toBe(10);
+
+    const results = manager
+      .getEntries()
+      .filter(
+        (entry): entry is Extract<SessionEntry, { type: "message" }> =>
+          entry.type === "message" &&
+          entry.message.role === "toolResult" &&
+          entry.message.toolName === "context_index",
+      );
+    expect(results).toHaveLength(9);
+    for (const result of results.slice(0, 8)) {
+      if (result.message.role !== "toolResult") continue;
+      expect(result.message.isError).toBe(false);
+      expect(messageText(result.message)).toContain("[context_index list");
+      expect(messageText(result.message)).toContain("e:");
+    }
+    const ninth = results[8];
+    if (!ninth || ninth.message.role !== "toolResult") {
+      throw new Error("missing ninth result");
+    }
+    expect(ninth.message.isError).toBe(false);
+    expect(messageText(ninth.message)).toContain("budget_exhausted");
+    expect(ninth.message.details).toMatchObject({
+      budgetExhausted: true,
+      resume: "next-run",
+    });
+  });
+
+  test("an invalid settings file fails the tool and cancels compaction", async () => {
+    const testRoot = createRoot();
+    writeFileSync(
+      join(testRoot.agentDir, "pi-context-index.json"),
+      JSON.stringify({ viewMaxChars: 10 }),
+      "utf8",
+    );
+    const provider = await createProvider(testRoot.agentDir);
+    const settingsManager = SettingsManager.create(testRoot.cwd, testRoot.agentDir);
+    const loader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager,
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const manager = SessionManager.create(testRoot.cwd, testRoot.sessionsDir);
+    appendHistory(manager);
+    const session = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager,
+      settingsManager,
+      loader,
+      provider,
+    });
+
+    const before = manager.getEntries().map((entry) => entry.id);
+    await expect(session.compact()).rejects.toThrow(/Compaction cancelled/);
+    expect(provider.faux.state.callCount).toBe(0);
+    expect(manager.getEntries().map((entry) => entry.id)).toEqual(before);
+
+    provider.faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("context_index", { action: "list" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("cannot read"),
+    ]);
+    await session.prompt("Try to list the archive.");
+    const result = findLatestToolResult(manager.getEntries());
+    if (
+      result?.type !== "message" ||
+      result.message.role !== "toolResult"
+    ) {
+      throw new Error("expected a tool result");
+    }
+    expect(result.message.isError).toBe(true);
+    expect(messageText(result.message)).toContain("settings error");
+    expect(provider.faux.state.callCount).toBe(2);
+  });
+});
+
+describe("P4 lifecycle: threshold and overflow", () => {
+  test("threshold compaction enters the hook, then the next prompt sees the capsule", async () => {
+    const testRoot = createRoot();
+    writeFileSync(
+      join(testRoot.agentDir, "settings.json"),
+      JSON.stringify({
+        compaction: { reserveTokens: 500, keepRecentTokens: 2_000 },
+      }),
+      "utf8",
+    );
+    const provider = await createProvider(testRoot.agentDir, {
+      contextWindow: 3_000,
+      maxTokens: 1_000,
+    });
+    const events: Array<{ reason: string; fromExtension: boolean; willRetry: boolean }> = [];
+    const observer: InlineExtension = {
+      name: "p4-compaction-observer",
+      factory: (pi: ExtensionAPI) => {
+        pi.on("session_compact", (event) => {
+          events.push({
+            reason: event.reason,
+            fromExtension: event.fromExtension,
+            willRetry: event.willRetry,
+          });
+        });
+      },
+    };
+    const settingsManager = SettingsManager.create(testRoot.cwd, testRoot.agentDir);
+    const loader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager,
+      extensionFactories: [observer],
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const manager = SessionManager.create(testRoot.cwd, testRoot.sessionsDir);
+    appendHistory(manager);
+    const session = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager,
+      settingsManager,
+      loader,
+      provider,
+    });
+
+    provider.faux.setResponses([fauxAssistantMessage("threshold answer")]);
+    await session.prompt("Continue the work.");
+    expect(provider.faux.state.callCount).toBe(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.reason).toBe("threshold");
+    expect(events[0]?.fromExtension).toBe(true);
+    expect(events[0]?.willRetry).toBe(false);
+
+    const compaction = manager
+      .getEntries()
+      .find((entry) => entry.type === "compaction");
+    if (compaction?.type !== "compaction") {
+      throw new Error("expected a threshold compaction entry");
+    }
+    expect(compaction.fromHook).toBe(true);
+    expect(compaction.summary.length).toBeLessThanOrEqual(2_400);
+    expect(compaction.summary).toContain(TARGET_USER_TEXT);
+
+    const requests: RecordedRequest[] = [];
+    provider.faux.setResponses([
+      (context) => {
+        requests.push({ messages: [...context.messages] });
+        return fauxAssistantMessage("after threshold");
+      },
+    ]);
+    await session.prompt("Continue from the capsule.");
+    expect(provider.faux.state.callCount).toBe(2);
+    expect(requestText(requests[0]!)).toContain(compaction.summary);
+  });
+
+  test("overflow recovery compacts through the hook and retries with the capsule", async () => {
+    const testRoot = createRoot();
+    writeFileSync(
+      join(testRoot.agentDir, "settings.json"),
+      JSON.stringify({
+        compaction: { reserveTokens: 0, keepRecentTokens: 2_000 },
+      }),
+      "utf8",
+    );
+    // Large window: the only compaction trigger is the explicit overflow error.
+    const provider = await createProvider(testRoot.agentDir);
+    const events: Array<{ reason: string; fromExtension: boolean; willRetry: boolean }> = [];
+    const observer: InlineExtension = {
+      name: "p4-overflow-observer",
+      factory: (pi: ExtensionAPI) => {
+        pi.on("session_compact", (event) => {
+          events.push({
+            reason: event.reason,
+            fromExtension: event.fromExtension,
+            willRetry: event.willRetry,
+          });
+        });
+      },
+    };
+    const settingsManager = SettingsManager.create(testRoot.cwd, testRoot.agentDir);
+    const loader = await createLoader({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      settingsManager,
+      extensionFactories: [observer],
+      additionalExtensionPaths: [EXTENSION_ENTRY],
+    });
+    const manager = SessionManager.create(testRoot.cwd, testRoot.sessionsDir);
+    appendHistory(manager);
+    const session = await createSession({
+      cwd: testRoot.cwd,
+      agentDir: testRoot.agentDir,
+      manager,
+      settingsManager,
+      loader,
+      provider,
+    });
+
+    const requests: RecordedRequest[] = [];
+    provider.faux.setResponses([
+      (context) => {
+        requests.push({ messages: [...context.messages] });
+        return fauxAssistantMessage("too long", {
+          stopReason: "error",
+          errorMessage: "prompt is too long: 9000 tokens > 3000 maximum",
+        });
+      },
+      (context) => {
+        requests.push({ messages: [...context.messages] });
+        return fauxAssistantMessage("recovered");
+      },
+    ]);
+    await session.prompt("Continue the work.");
+    expect(provider.faux.state.callCount).toBe(2);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.reason).toBe("overflow");
+    expect(events[0]?.fromExtension).toBe(true);
+    expect(events[0]?.willRetry).toBe(true);
+
+    const compaction = manager
+      .getEntries()
+      .find((entry) => entry.type === "compaction");
+    if (compaction?.type !== "compaction") {
+      throw new Error("expected an overflow compaction entry");
+    }
+    expect(compaction.fromHook).toBe(true);
+    expect(requestText(requests[1]!)).toContain(compaction.summary);
+    expect(requestText(requests[1]!)).toContain(TARGET_USER_TEXT);
   });
 });
